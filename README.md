@@ -301,6 +301,7 @@ A static site can also skip the key by pointing at someone's running server unde
 | `Shift+→` · `Shift+↓` | In a replay: next candle · play / pause |
 | `Esc` | Cancel drawing / choosing a replay start / close dialog |
 | `Delete` / `Backspace` | Delete the selected drawing |
+| `Ctrl+D` | Duplicate the selected drawing (the copy is selected, ready to drag) |
 | `Ctrl+S` · `Ctrl+Enter` | In the script editor: save · add to chart |
 
 **Using the toolbar:**

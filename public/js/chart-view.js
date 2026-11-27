@@ -166,6 +166,9 @@ const STROKE_ICONS = {
   dotted: '<path d="M3.5 12h.01M8.5 12h.01M13.5 12h.01M18.5 12h.01" stroke-width="3"/>',
 };
 const strokeIcon = (style) => `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">${STROKE_ICONS[style]}</svg>`;
+const ICON_DUPLICATE = '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M16 8V5.5A1.5 1.5 0 0 0 14.5 4h-9A1.5 1.5 0 0 0 4 5.5v9A1.5 1.5 0 0 0 5.5 16H8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><rect x="8" y="8" width="12" height="12" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>';
+const ICON_LOCK = '<svg viewBox="0 0 24 24" width="16" height="16"><rect x="5" y="11" width="14" height="9" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 11V8a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+const ICON_UNLOCK = '<svg viewBox="0 0 24 24" width="16" height="16"><rect x="5" y="11" width="14" height="9" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 11V8a4 4 0 0 1 7.5-2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
 const ICON_EDIT = '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>';
 const ICON_LABELS = '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M4 7V5h11v2M9.5 5v13M7.5 18h4M14 12h6M17 12v6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
@@ -283,6 +286,8 @@ export class ChartView {
         <button data-db="labels" class="db-labels" hidden>${ICON_LABELS}</button>
         <button data-db="edit" title="${t('draw.edit')}" aria-label="${t('draw.edit')}" hidden>${ICON_EDIT}</button>
         <button data-db="fib" title="${t('common.settings')}" aria-label="${t('common.settings')}" hidden>${ICON_GEAR}</button>
+        <button data-db="duplicate" title="${t('draw.duplicate')}" aria-label="${t('draw.duplicate')}">${ICON_DUPLICATE}</button>
+        <button data-db="lock" title="${t('draw.lock')}" aria-label="${t('draw.lock')}" aria-pressed="false">${ICON_UNLOCK}</button>
         <button data-db="delete" title="${t('chart.deleteDel')}">${ICON_TRASH}</button>
       </div>
       <div class="rp-pick" hidden><div class="rp-dim"></div></div>
@@ -568,6 +573,8 @@ export class ChartView {
       if (style) { this.drawings.updateSelected({ style }); return; }
       const act = e.target.closest('[data-db]')?.dataset.db;
       if (act === 'delete') this.drawings.deleteSelected();
+      if (act === 'duplicate') this.drawings.duplicateSelected();
+      if (act === 'lock') this.drawings.toggleLockSelected();
       if (act === 'labels') {
         const d = this.drawings.selected;
         if (d) this.drawings.updateSelected({ labels: d.labels === false ? undefined : false });
@@ -660,6 +667,12 @@ export class ChartView {
     labels.hidden = !['long', 'short', 'avwap'].includes(d.type); // a Fib's labels are in its settings
     bar.querySelector('[data-db="fib"]').hidden = d.type !== 'fib';
     bar.querySelector('[data-db="edit"]').hidden = !editablePoints(d).length;
+    const lock = bar.querySelector('[data-db="lock"]');
+    lock.classList.toggle('on', !!d.locked);
+    lock.innerHTML = d.locked ? ICON_LOCK : ICON_UNLOCK;
+    lock.title = t(d.locked ? 'draw.unlock' : 'draw.lock');
+    lock.setAttribute('aria-label', lock.title);
+    lock.setAttribute('aria-pressed', String(!!d.locked));
     const shown = d.labels !== false;
     labels.classList.toggle('on', shown);
     labels.title = t(shown ? 'chart.labelsHide' : 'chart.labelsShow');
@@ -1128,6 +1141,7 @@ export class ChartView {
   setTool(tool) { this.drawings.setTool(tool); }
   cancelDrawing() { return this.drawings.cancel(); }
   deleteSelectedDrawing() { return this.drawings.deleteSelected(); }
+  duplicateSelectedDrawing() { return this.drawings.duplicateSelected(); }
   clearDrawings() { this.drawings.clearAll(); }
 
   setActive(on) { this.el.classList.toggle('active', on); }

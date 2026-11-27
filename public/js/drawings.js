@@ -249,6 +249,28 @@ export class DrawingLayer {
     return false;
   }
 
+  /** A copy of the selected drawing (same points and look, unlocked) on top of it, selected so it can be dragged away. */
+  duplicateSelected() {
+    const d = this.selected;
+    if (!d) return false;
+    const copy = clone(d);
+    for (const k of Object.keys(copy)) if (k.startsWith('_')) delete copy[k];
+    copy.id = crypto.randomUUID();
+    delete copy.locked;
+    this.items.push(copy);
+    this._changed(true);
+    this.select(copy.id);
+    return true;
+  }
+
+  /** Locks or unlocks the selected drawing. A locked drawing can still be selected, edited and deleted, but not dragged. */
+  toggleLockSelected() {
+    const d = this.selected;
+    if (!d) return false;
+    this.updateSelected({ locked: d.locked ? undefined : true });
+    return true;
+  }
+
   deleteSelected() {
     if (!this.selectedId) return false;
     this.items = this.items.filter((d) => d.id !== this.selectedId);
@@ -478,11 +500,11 @@ export class DrawingLayer {
     return pts.filter(([, x, y]) => x != null && y != null);
   }
 
-  /** Starts dragging when (x, y) is on the selected drawing's handle or on any drawing. */
+  /** Starts dragging when (x, y) is on the selected drawing's handle or on any drawing (a locked one is only selected). */
   beginDrag(x, y) {
     if (this.tool !== 'cursor' || !this.series) return false;
     const sel = this.selected;
-    if (sel) {
+    if (sel && !sel.locked) {
       const h = this._handles(sel).find(([, hx, hy]) => Math.hypot(hx - x, hy - y) <= HANDLE_PX);
       if (h) { this.drag = { item: sel, handle: h[0], start: this._point(x, y, false), orig: clone(sel) }; return !!this.drag.start; }
     }
@@ -490,6 +512,7 @@ export class DrawingLayer {
     if (!id) return false;
     this.select(id);
     const item = this.selected;
+    if (item.locked) return false; // selected, but it stays where it is
     this.drag = { item, handle: 'body', start: this._point(x, y, false), orig: clone(item) };
     return !!this.drag.start;
   }
