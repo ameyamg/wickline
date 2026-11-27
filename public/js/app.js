@@ -14,6 +14,7 @@ import {
   setPreset, setColor, resetColors,
 } from './theme.js';
 import { TOOLS, MAGNET_MODES } from './drawings.js';
+import { FavoriteToolsState, FavoriteToolsBar } from './favorite-tools.js';
 import { SymbolSearch } from './search.js';
 import { QuoteList } from './quote-list.js';
 import { cleanList, isSection, sectionName, symbolsOf, addSection, renameSection, removeSection, moveEntry } from './watchlist.js';
@@ -847,6 +848,21 @@ const toolMenu = $('#tool-menu');
 const groupTool = store.get('toolGroups', {});
 const currentOf = (g) => (g.tools.includes(groupTool[g.id]) ? groupTool[g.id] : g.tools[0]);
 const toolTitle = (id) => `${TOOLS[id].label}${TOOL_KEYS[id] ? ` (${TOOL_KEYS[id]})` : ''}`;
+const favoriteTools = new FavoriteToolsState();
+const favoriteBar = new FavoriteToolsBar(chartsEl, { state: favoriteTools, icons: TOOL_ICONS, titleOf: toolTitle, onSelect: selectTool });
+favoriteTools.onChange((kind) => { if (kind === 'tools') syncFavoriteButtons(); });
+
+function syncFavoriteButtons() {
+  for (const button of toolMenu.querySelectorAll('[data-favorite]')) {
+    const id = button.dataset.favorite;
+    const on = favoriteTools.has(id);
+    const title = t(on ? 'draw.favorites.remove' : 'draw.favorites.add', { tool: TOOLS[id].label });
+    button.classList.toggle('on', on);
+    button.setAttribute('aria-pressed', String(on));
+    button.setAttribute('aria-label', title);
+    button.title = title;
+  }
+}
 
 function renderToolbar() {
   $('#toolbar').innerHTML = TOOL_GROUPS.map((g) => {
@@ -863,6 +879,7 @@ function renderToolbar() {
 
 function setToolUI(tool) {
   document.querySelectorAll('#toolbar [data-tool]').forEach((b) => b.classList.toggle('on', b.dataset.tool === tool));
+  favoriteBar.setActive(tool);
   for (const v of views) v.chartEl.classList.toggle('drawing', v === activeView && tool !== 'cursor');
 }
 
@@ -891,7 +908,11 @@ $('#toolbar').addEventListener('click', (e) => {
   if (!b || !activeView) return;
   if (b.dataset.more) {
     const g = TOOL_GROUPS.find((x) => x.id === b.dataset.more);
-    toolMenu.innerHTML = g.tools.map((id) => `<button class="layout-opt" data-pick="${id}">${TOOL_ICONS[id]}<span>${TOOLS[id].label}</span><kbd>${TOOL_KEYS[id] || ''}</kbd></button>`).join('');
+    toolMenu.innerHTML = g.tools.map((id) => `<div class="tool-menu-row">
+      <button class="layout-opt" data-pick="${id}">${TOOL_ICONS[id]}<span>${TOOLS[id].label}</span><kbd>${TOOL_KEYS[id] || ''}</kbd></button>
+      <button type="button" class="tool-favorite" data-favorite="${id}"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 3.5l2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.8l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/></svg></button>
+    </div>`).join('');
+    syncFavoriteButtons();
     openMenu(toolMenu, b.closest('.tool-group'), { side: true });
     return;
   }
@@ -903,6 +924,8 @@ $('#toolbar').addEventListener('click', (e) => {
   }
 });
 toolMenu.addEventListener('click', (e) => {
+  const star = e.target.closest('[data-favorite]');
+  if (star) { e.stopPropagation(); favoriteTools.toggle(star.dataset.favorite); return; }
   const b = e.target.closest('[data-pick]');
   if (!b) return;
   toolMenu.hidden = true;

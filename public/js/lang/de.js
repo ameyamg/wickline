@@ -1,5 +1,9 @@
 // German UI text (js/i18n.js). Same keys as en.js; keep every {placeholder}.
 export default {
+  'draw.favorites.title': 'Bevorzugte Zeichenwerkzeuge',
+  'draw.favorites.add': '{tool} zu Favoriten hinzufügen',
+  'draw.favorites.remove': '{tool} aus Favoriten entfernen',
+  'draw.favorites.move': 'Zum Verschieben ziehen',
 
   // Words used all over the app
   'common.close': 'Schließen',
