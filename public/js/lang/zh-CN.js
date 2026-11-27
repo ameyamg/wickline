@@ -1,5 +1,9 @@
 // Simplified Chinese UI text (js/i18n.js). Same keys as en.js; keep every {placeholder}.
 export default {
+  'draw.favorites.title': '常用绘图工具',
+  'draw.favorites.add': '收藏{tool}',
+  'draw.favorites.remove': '取消收藏{tool}',
+  'draw.favorites.move': '拖动以移动',
 
   // Words used all over the app
   'common.close': '关闭',

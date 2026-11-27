@@ -1,5 +1,9 @@
 // Italian UI text (js/i18n.js). Same keys as en.js; keep every {placeholder}.
 export default {
+  'draw.favorites.title': 'Strumenti di disegno preferiti',
+  'draw.favorites.add': 'Aggiungi {tool} ai preferiti',
+  'draw.favorites.remove': 'Rimuovi {tool} dai preferiti',
+  'draw.favorites.move': 'Trascina per spostare',
 
   // Words used all over the app
   'common.close': 'Chiudi',

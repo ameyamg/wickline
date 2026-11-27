@@ -2,6 +2,10 @@
 // {name} is filled in by t(key, { name }); a { one, other } value is a plural, picked by vars.n.
 // To add a language: copy this file to lang/<id>.js, translate the values, and add it to LANGUAGES in js/i18n.js.
 export default {
+  'draw.favorites.title': 'Favorite drawing tools',
+  'draw.favorites.add': 'Add {tool} to favorites',
+  'draw.favorites.remove': 'Remove {tool} from favorites',
+  'draw.favorites.move': 'Drag to move',
 
   // Words used all over the app
   'common.close': 'Close',

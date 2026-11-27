@@ -1,5 +1,9 @@
 // Korean UI text (js/i18n.js). Same keys as en.js; keep every {placeholder}.
 export default {
+  'draw.favorites.title': '즐겨찾는 그리기 도구',
+  'draw.favorites.add': '{tool} 즐겨찾기에 추가',
+  'draw.favorites.remove': '{tool} 즐겨찾기에서 제거',
+  'draw.favorites.move': '드래그하여 이동',
 
   // Words used all over the app
   'common.close': '닫기',

@@ -1,5 +1,9 @@
 // Brazilian Portuguese UI text (js/i18n.js). Same keys as en.js; keep every {placeholder}.
 export default {
+  'draw.favorites.title': 'Ferramentas de desenho favoritas',
+  'draw.favorites.add': 'Adicionar {tool} aos favoritos',
+  'draw.favorites.remove': 'Remover {tool} dos favoritos',
+  'draw.favorites.move': 'Arraste para mover',
 
   // Words used all over the app
   'common.close': 'Fechar',

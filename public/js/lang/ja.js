@@ -1,5 +1,9 @@
 // Japanese UI text (js/i18n.js). Same keys as en.js; keep every {placeholder}.
 export default {
+  'draw.favorites.title': 'お気に入りの描画ツール',
+  'draw.favorites.add': '{tool}をお気に入りに追加',
+  'draw.favorites.remove': '{tool}をお気に入りから削除',
+  'draw.favorites.move': 'ドラッグして移動',
 
   // Words used all over the app
   'common.close': '閉じる',

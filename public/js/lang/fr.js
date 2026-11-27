@@ -1,5 +1,9 @@
 // French UI text (js/i18n.js). Same keys as en.js; keep every {placeholder}.
 export default {
+  'draw.favorites.title': 'Outils de dessin favoris',
+  'draw.favorites.add': 'Ajouter {tool} aux favoris',
+  'draw.favorites.remove': 'Retirer {tool} des favoris',
+  'draw.favorites.move': 'Faire glisser pour déplacer',
 
   // Words used all over the app
   'common.close': 'Fermer',
