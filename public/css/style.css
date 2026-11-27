@@ -293,6 +293,14 @@ body.popout .hide-popout { display: none; }
 .lg-title .lg-name { font-size: 15px; font-weight: 600; color: var(--text-strong); padding-left: 0; }
 .charts:not([data-layout="1"]):not(.has-max) .lg-title .lg-name { font-size: 13px; }
 .lg-meta { color: var(--muted); }
+/* One eye for all the indicators (issue #19). */
+.lg-all {
+  align-self: center; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 4px;
+  color: var(--muted); opacity: 0.6; pointer-events: auto; text-shadow: none;
+}
+.lg-all[hidden] { display: none; }
+.lg-all:hover { opacity: 1; color: var(--text-strong); background: var(--panel-2); }
+.lg-all[aria-pressed="false"] { opacity: 1; }
 .lg-ohlc { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 2px 0 4px; font-variant-numeric: tabular-nums; }
 .lg-ohlc span { color: var(--muted); }
 .lg-ohlc b { font-weight: 500; margin-left: 3px; }
@@ -730,11 +738,11 @@ body.popout .hide-popout { display: none; }
 .point-editor .pop-section:first-of-type { margin-top: 0; padding-top: 0; border-top: 0; }
 .pe-field { display: grid; grid-template-columns: 92px minmax(0, 1fr); align-items: center; gap: 8px; margin-bottom: 6px; }
 .pe-field span { color: var(--muted); font-size: 12px; }
-.pe-field input {
+.pe-field input, .pe-field select {
   min-width: 0; height: 28px; padding: 0 8px; font: inherit; font-variant-numeric: tabular-nums;
   background: var(--bg); color: var(--text-strong); border: 1px solid var(--panel-2); border-radius: var(--radius);
 }
-.pe-field input:focus { outline: none; border-color: var(--accent); }
+.pe-field input:focus, .pe-field select:focus { outline: none; border-color: var(--accent); }
 .pop-section { margin: 10px 0 6px; padding-top: 8px; border-top: 1px solid var(--panel-2); color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
 .pop-section:empty { margin: 8px 0; padding: 0; }
 .fib-levels { max-height: 220px; overflow-y: auto; }
@@ -1188,3 +1196,53 @@ body.popout .hide-popout { display: none; }
 .hm-tip-grid b { text-align: right; color: var(--text-strong); font-variant-numeric: tabular-nums; font-weight: 600; }
 .hm-tip-grid b.up { color: var(--up); }
 .hm-tip-grid b.down { color: var(--down); }
+
+/* Dropdowns in forms and editors: the same inset arrow as the toolbar's .select (the browser's own
+   arrow sits against the right border). Last in the file so it wins over the fields' `background`. */
+select.field, .pe-field select, .pop-field select, .st-props select {
+  appearance: none;
+  padding-right: 30px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23787B86' fill='none' stroke-width='1.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+
+/* Downloaded history (js/history.js, js/history-ui.js): the "download?" bar on a chart, the note
+   while older bars load, the downloads indicator and its list, and the settings section. */
+.hist-ask {
+  position: absolute; top: 48px; left: 50%; transform: translateX(-50%); z-index: 7;
+  display: flex; align-items: center; gap: 6px; padding: 5px 6px 5px 12px; max-width: calc(100% - 16px);
+  background: var(--panel); border: 1px solid var(--accent); border-radius: 10px; box-shadow: var(--shadow);
+  font-size: 12.5px; color: var(--text-strong);
+}
+.hist-ask[hidden], .hist-loading[hidden] { display: none; }
+.hist-ask .ha-text { white-space: normal; line-height: 1.35; }
+.hist-ask .tb-btn { height: 28px; padding: 0 10px; flex: none; }
+.hist-ask .ha-yes { color: var(--accent-text); font-weight: 700; }
+.hist-ask .tb-btn:hover { background: var(--panel-2); }
+.hist-loading {
+  position: absolute; left: 10px; bottom: 36px; z-index: 6; pointer-events: none;
+  padding: 3px 9px; border-radius: 999px; font-size: 11.5px; color: var(--muted);
+  background: var(--panel); border: 1px solid var(--border);
+}
+.dl-btn { display: inline-flex; align-items: center; gap: 3px; padding: 0 2px; color: var(--accent-text); font-variant-numeric: tabular-nums; }
+.dl-btn[hidden] { display: none; }
+.dl-pop { position: fixed; width: min(320px, calc(100vw - 16px)); z-index: 30; }
+.dl-job { padding: 6px 0; border-top: 1px solid var(--panel-2); }
+.dl-job:first-of-type { border-top: 0; }
+.dl-job.ended { opacity: 0.7; }
+.dl-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+.dl-row b { color: var(--text-strong); font-weight: 600; }
+.dl-state { margin-left: auto; color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.dl-row button { width: 20px; height: 20px; border-radius: 4px; color: var(--muted); }
+.dl-row button:hover { color: var(--text-strong); background: var(--panel-2); }
+.dl-bar { height: 3px; margin-top: 5px; border-radius: 2px; background: var(--panel-2); overflow: hidden; }
+.dl-bar i { display: block; height: 100%; background: var(--accent); }
+.dl-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--panel-2); color: var(--muted); font-size: 12px; }
+.set-history { display: flex; flex-direction: column; gap: 10px; }
+.set-history[hidden] { display: none; }
+.set-sec { margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--panel-2); color: var(--text-strong); font-weight: 600; font-size: 12.5px; }
+.set-alpaca-row { display: flex; align-items: center; gap: 8px; }
+.set-alpaca-row .spacer { flex: 1; }
+#set-alpaca-status.ok { color: var(--up); }
+#set-alpaca-status.err { color: var(--down); }

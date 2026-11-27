@@ -7,6 +7,7 @@
 //            server, or Twelve Data (visitor's free key) + Yahoo's live stream on a static site
 
 import { apiUrl, dataMode } from './env.js';
+import { historyReady, cryptoOlder, cryptoWindow, yahooOlder, prefetchHistory } from './history.js';
 import { YahooDirectStream } from './yahoo-direct.js';
 import { tdBars, tdSearch, tdQuotes } from './twelvedata.js';
 import { store } from './util.js';
@@ -222,6 +223,8 @@ class BinanceFeed {
     const tick = s?.filters?.find((f) => f.filterType === 'PRICE_FILTER')?.tickSize || '0.01';
     this.remember(raw);
     this.seeded = true;
+    this.history = await historyReady();
+    if (this.history && this.plan.base.sec < 3600) prefetchHistory(`${this.src}:${this.ticker}`, this.tf.id);
     return {
       meta: {
         symbol: this.ticker,
@@ -236,11 +239,52 @@ class BinanceFeed {
     };
   }
 
-  async loadOlder(firstTime) {
+  /**
+   * Older bars. Past the last 31 days of a chart under an hour, or to reach a replay's date (from,
+   * chart time), they come from downloaded history (js/history.js): Binance's archive, a month at a
+   * time, kept on this computer. Otherwise, and if that fails, from the API, 1000 klines a page.
+   * A download that would be big isn't started: pendingAsk says how big (the chart asks the user).
+   */
+  async loadOlder(firstTime, { from = null } = {}) {
     if (!this.canLoadMore) return [];
+    this.pendingAsk = null;
+    const firstUtc = firstTime - this.shift;
+    if (this.history && this.plan.base.sec < 3600 && (from != null || firstUtc < Date.now() / 1000 - 31 * 86400)) {
+      try {
+        const r = await cryptoOlder(`${this.src}:${this.ticker}`, this.tf.id, firstUtc, {
+          count: Math.min(20000, 1500 * (this.plan.factor || 1)), from: from != null ? from - this.shift : null,
+        });
+        this.pendingAsk = r.ask;
+        if (r.done && !r.bars.length) this.canLoadMore = false;
+        if (r.bars.length || r.ask || r.done) return this.olderChart(r.bars.filter((b) => b.time < firstUtc), firstTime);
+      } catch (e) {
+        console.warn('Downloaded history failed, using the API:', e.message);
+      }
+    }
     // The first bar starts a full bar, so the klines before it make whole bars.
-    const raw = await this.fetchRaw((firstTime - this.shift) * 1000 - 1);
+    const raw = await this.fetchRaw(firstUtc * 1000 - 1);
     return this.toChart(raw).filter((b) => b.time < firstTime);
+  }
+
+  /**
+   * A replay far back: chart bars from `from` (chart time) on, about `count`, from downloaded history.
+   * → { bars, more }, or null when this chart has none (an hour or longer: the API pages those quickly).
+   */
+  async loadWindow(from, count = 5000) {
+    if (!this.history || this.plan.base.sec >= 3600) return null;
+    this.pendingAsk = null;
+    const r = await cryptoWindow(`${this.src}:${this.ticker}`, this.tf.id, from - this.shift, Math.min(50000, count * (this.plan.factor || 1)));
+    this.pendingAsk = r.ask;
+    const out = this.toChart(r.bars);
+    if (this.plan.agg && r.more && out.length > 1) out.pop(); // the last group may be cut: it comes whole with the next window
+    return { bars: out, more: r.more };
+  }
+
+  /** Older base bars → chart bars; a grouped bar the batch only partly covers is left for the next one. */
+  olderChart(raw, firstTime) {
+    const out = this.toChart(raw).filter((b) => b.time < firstTime);
+    if (this.plan.agg && raw.length && out.length && utcBucket(raw[0].time, this.tf) < raw[0].time) out.shift();
+    return out;
   }
 
   /**
@@ -544,6 +588,12 @@ class YahooFeed {
     }
     this.tzOffset = res.meta?.tzOffset || 0;
     this.sessionOpen = Number.isFinite(res.meta?.sessionOpen) ? res.meta.sessionOpen : null;
+    // Intraday charts can go further back with downloaded history (kept Yahoo bars, or Alpaca's).
+    if (this.server && !this.tf.daily && await historyReady()) {
+      this.history = true;
+      this.canLoadMore = true;
+      prefetchHistory(`YAHOO:${this.ticker}`, this.tf.id, this.ext);
+    }
     return res;
   }
 
@@ -559,8 +609,25 @@ class YahooFeed {
     return start + Math.floor((t - start) / this.tf.sec) * this.tf.sec;
   }
 
-  async loadOlder(firstTime) {
-    if (this.server || !this.canLoadMore) return [];
+  /** A replay far back: chart bars from `from` on (see BinanceFeed.loadWindow). */
+  async loadWindow(from, count = 5000) {
+    if (!this.server || !this.history) return null;
+    this.pendingAsk = null;
+    const r = await yahooOlder(`YAHOO:${this.ticker}`, this.tf.id, null, { prepost: this.ext, from, count, forward: true });
+    this.pendingAsk = r.ask;
+    return { bars: r.bars, more: r.more };
+  }
+
+  async loadOlder(firstTime, { from = null } = {}) {
+    this.pendingAsk = null;
+    if (this.server) {
+      if (!this.history || !this.canLoadMore) return [];
+      const r = await yahooOlder(`YAHOO:${this.ticker}`, this.tf.id, firstTime, { prepost: this.ext, from });
+      this.pendingAsk = r.ask;
+      if (!r.bars.length && !r.ask) this.canLoadMore = false;
+      return r.bars.filter((b) => b.time < firstTime);
+    }
+    if (!this.canLoadMore) return [];
     const res = await tdBars(this.ticker, this.tf, { before: firstTime, open: this.sessionOpen });
     this.canLoadMore = res.full;
     return res.bars.filter((b) => b.time < firstTime);
@@ -724,6 +791,7 @@ export async function searchYahoo(query) {
     exchange: r.exchange,
     type: r.type,
     category: YAHOO_CATEGORY[r.quoteType] || 'other',
+    ...(r.alias ? { alias: true } : {}), // XAUUSD -> gold futures (lib/search-aliases.mjs): ranked as an exact match
   }));
 }
 

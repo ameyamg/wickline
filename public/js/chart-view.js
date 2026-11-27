@@ -17,6 +17,7 @@ import { canRunCommunity } from './community.js';
 import { LIMITS, coerceParams, safeColor } from './script-sanitize.js';
 import { esc, formatNumber, formatVolume, uid, withAlpha, fixed, decimalComma } from './util.js';
 import { t, lang, locale } from './i18n.js';
+import { startDownload, whenDownloaded, formatBytes } from './history.js';
 
 const DAY = 86400;
 const FLUSH_MS = 100;        // live redraws at most ~10 times per second per chart
@@ -254,6 +255,7 @@ export class ChartView {
       <div class="chart-host"></div>
       <div class="legend">
         <div class="lg-title"><span class="lg-name"></span><span class="lg-meta"></span>
+          <button class="lg-all" data-act="all-eye" hidden></button>
           <div class="qt" hidden>
             <button class="qt-sell" data-qt="sell" title="${t('chart.qtSellTitle')}"><small>${t('common.sell')}</small><b class="qt-px">—</b></button>
             <input class="qt-qty" type="number" min="0" step="any" aria-label="${t('chart.quantity')}" title="${t('chart.quantity')}">
@@ -291,6 +293,12 @@ export class ChartView {
         <button data-rp="date" class="tb-btn">${t('chart.replay.go')}</button>
         <button data-rp="cancel" class="tb-btn">${t('common.cancel')}</button>
       </div>
+      <div class="hist-ask" hidden>
+        <span class="ha-text"></span>
+        <button data-ha="yes" class="tb-btn ha-yes">${t('hist.download')}</button>
+        <button data-ha="no" class="tb-btn">${t('hist.notNow')}</button>
+      </div>
+      <div class="hist-loading" hidden>${t('hist.loadingOlder')}</div>
       <div class="replay-bar" hidden>
         <button data-rp="pick" title="${t('chart.replay.pickAgain')}" aria-label="${t('chart.replay.pickAgain')}">${ICON_CUT}</button>
         <button data-rp="play" title="${t('chart.replay.playTitle')}" aria-label="${t('chart.replay.playAria')}">${ICON_PLAY}</button>
@@ -511,6 +519,7 @@ export class ChartView {
     banner.addEventListener('click', onReplayClick);
     rpBar.querySelector('[data-rp="speed"]').addEventListener('change', (e) => this.setReplaySpeed(Number(e.target.value)));
     for (const el of [rpBar, banner, this.q('.qt')]) el.addEventListener('keydown', (e) => { if (e.key !== 'Escape') e.stopPropagation(); });
+    this.q('.hist-ask').addEventListener('click', (e) => { const b = e.target.closest('[data-ha]'); if (b) this.answerHistory(b.dataset.ha === 'yes'); });
     this.q('.qt').addEventListener('click', (e) => {
       const side = e.target.closest('[data-qt]')?.dataset.qt;
       if (side) this.hooks.onQuickTrade?.(this, side, Number(this.q('.qt-qty').value));
@@ -524,6 +533,7 @@ export class ChartView {
     const onLegendClick = (e) => {
       const btn = e.target.closest('button[data-act]');
       if (!btn) return;
+      if (btn.dataset.act === 'all-eye') { this.setAllIndicatorsHidden(btn.getAttribute('aria-pressed') === 'true'); return; }
       const row = btn.closest('.lg-row');
       if (btn.dataset.act === 'rm-cmp') { this.removeCompare(row.dataset.cmp); return; }
       const id = row.dataset.id;
@@ -1095,6 +1105,16 @@ export class ChartView {
     this.hooks.onChange?.(this);
   }
 
+  /** Hides or shows every indicator and strategy at once (issue #19); each keeps its own eye. */
+  setAllIndicatorsHidden(hidden) {
+    for (const entry of this.live.values()) {
+      setHiddenFlag(entry.inst, hidden);
+      applyEntryVisibility(entry);
+    }
+    this.buildLegend();
+    this.hooks.onChange?.(this);
+  }
+
   removeIndicator(id) {
     const entry = this.live.get(id);
     if (!entry) return;
@@ -1322,6 +1342,9 @@ export class ChartView {
     this.feed?.close();
     this.feed = null;
     if (settings.view === this) closeSettings();
+    this.q('.hist-ask').hidden = true;
+    this.histAsk = null;
+    this.histDeclined = false;
     this.q('.overlay.loading').hidden = false;
     this.showError(null);
     this.setStatus('connecting');
@@ -1336,19 +1359,26 @@ export class ChartView {
       if (!res.bars?.length) throw new Error(t('chart.err.noData'));
       this.meta = { tzOffset: 0, ...res.meta };
       let bars = res.bars;
-      if (this.replay) {
+      let windowMore = null;
+      if (this.replay && f.loadWindow && bars[0].time - (this.meta.tzOffset || 0) > this.replay.clock) {
+        // Replaying far back (another timeframe): a window of downloaded history around that moment.
+        const w = await f.loadWindow(this.replay.clock + (this.meta.tzOffset || 0) - 300 * tf.sec).catch(() => null);
+        if (gen !== this.loadGen) { f.close(); return; }
+        if (w?.bars.length) { bars = w.bars; windowMore = w.more; }
+      }
+      if (this.replay && windowMore == null) {
         // Replaying: fetch older candles until the replay's date is covered (a lower timeframe
         // starts with less history), then continue at that moment.
         const tz = this.meta.tzOffset || 0;
         for (let k = 0; k < 25 && f.canLoadMore && bars[0].time - tz + tf.sec > this.replay.clock; k++) {
-          const older = await f.loadOlder(bars[0].time).catch(() => []);
+          const older = await f.loadOlder(bars[0].time, { from: this.replay.clock + tz - 300 * tf.sec }).catch(() => []);
           if (gen !== this.loadGen) { f.close(); return; }
           if (!older.length) break;
           bars = older.concat(bars);
         }
       }
       this.bars = bars;
-      if (this.replay) this.resumeReplayOn(bars);
+      if (this.replay) { this.resumeReplayOn(bars); if (this.replay) this.replay.more = !!windowMore; }
       this.feed = f;
       this.main.applyOptions({ priceFormat: this.priceFormat() });
       for (const entry of this.live.values()) {
@@ -1389,11 +1419,18 @@ export class ChartView {
     }
   }
 
-  async loadOlder() {
+  /**
+   * Prepends older bars (from: a chart time to reach, for a replay). Downloaded history that would be a
+   * big download comes back as the feed's pendingAsk: scrolling asks once (only when automatic downloads
+   * are off; small ones just happen), a replay's date asks in replayToDate.
+   */
+  async loadOlder({ from = null } = {}) {
     this.loadingOlder = true;
     const f = this.feed, gen = this.loadGen;
+    const note = setTimeout(() => { if (gen === this.loadGen) this.q('.hist-loading').hidden = false; }, 400);
     try {
-      const older = await f.loadOlder(this.bars[0].time);
+      const older = await f.loadOlder(this.bars[0].time, { from });
+      if (gen === this.loadGen && from == null && f.pendingAsk && !this.histDeclined) this.askHistory(f.pendingAsk, { resume: () => this.loadOlder() });
       if (gen !== this.loadGen || this.feed !== f || !older.length) return 0;
       this.bars = older.concat(this.bars);
       if (this.replay) {
@@ -1406,7 +1443,36 @@ export class ChartView {
       console.warn('Could not load older bars:', e);
       return 0;
     } finally {
+      clearTimeout(note);
+      this.q('.hist-loading').hidden = true;
       this.loadingOlder = false;
+    }
+  }
+
+  /**
+   * A download that would be big: asked on the chart, without blocking it. Yes: it runs in the
+   * background (with the downloads indicator) and resume() follows when it's done, if the chart
+   * still shows the same thing. No: noThanks(), and scrolling won't ask again for this chart.
+   */
+  askHistory(ask, { resume = null, noThanks = null } = {}) {
+    const box = this.q('.hist-ask');
+    box.querySelector('.ha-text').textContent = t('hist.ask', { size: formatBytes(ask.bytes, locale), symbol: this.ticker, tf: this.tf.id });
+    box.hidden = false;
+    this.histAsk = { ask, resume, noThanks, symbol: this.state.symbol, tf: this.tf.id };
+  }
+
+  async answerHistory(yes) {
+    const a = this.histAsk;
+    this.histAsk = null;
+    this.q('.hist-ask').hidden = true;
+    if (!a) return;
+    if (!yes) { this.histDeclined = true; a.noThanks?.(); return; }
+    try {
+      const { id } = await startDownload(a.symbol, a.tf, a.ask.from);
+      const state = await whenDownloaded(id);
+      if (state === 'done' && this.state.symbol === a.symbol && this.tf.id === a.tf) a.resume?.();
+    } catch (e) {
+      this.hooks.onReplay?.(this, 'notice', e.message);
     }
   }
 
@@ -1657,11 +1723,69 @@ export class ChartView {
     const target = value ? Date.parse(`${value}:00Z`) / 1000 : NaN;
     if (!Number.isFinite(target)) return;
     const gen = this.loadGen;
+    const from = target - 300 * this.tf.sec; // some history before the replay's start
+    // Further back than the chart: with downloaded history, play from a window around the date (only
+    // the months there download), filled in as the replay goes on.
+    if (this.bars[0].time > target && this.feed?.loadWindow) {
+      const w = await this.feed.loadWindow(from).catch(() => null);
+      if (gen !== this.loadGen || !this.replayPick) return;
+      if (w?.bars.length) { this.startWindowReplay(w, target); return; }
+      if (this.feed.pendingAsk) {
+        this.askHistory(this.feed.pendingAsk, {
+          resume: () => { if (this.replayPick) this.replayToDate(value); },
+          noThanks: () => { if (this.replayPick) this.replayAtOrOldest(target); },
+        });
+        return;
+      }
+    }
     for (let k = 0; k < 15 && this.feed?.canLoadMore && this.bars[0].time > target; k++) {
-      if (!(await this.loadOlder())) break;
+      if (!(await this.loadOlder({ from }))) break;
       if (gen !== this.loadGen || !this.replayPick) return; // cancelled meanwhile
     }
     if (gen !== this.loadGen || !this.replayPick) return;
+    if (this.bars[0].time > target && this.feed?.pendingAsk) {
+      // That far back is a big download: ask. Yes: start there once it's in; no: from the oldest bar loaded.
+      this.askHistory(this.feed.pendingAsk, {
+        resume: () => { if (this.replayPick) this.replayToDate(value); },
+        noThanks: () => { if (this.replayPick) this.replayAtOrOldest(target); },
+      });
+      return;
+    }
+    this.replayAtOrOldest(target);
+  }
+
+  /** A replay from a window of history (w: { bars, more } from feed.loadWindow) at target, or its first bar. */
+  startWindowReplay(w, target) {
+    clearInterval(this.replay?.timer);
+    this.replay = null;
+    this.bars = w.bars;
+    this.renderAll(true);
+    let i = this.indexAtOrBefore(target);
+    if (i < 0) { this.hooks.onReplay?.(this, 'notice', t('chart.replay.tooFarBack')); i = 0; }
+    this.startReplay(i, w.bars);
+    this.replay.more = w.more;
+  }
+
+  /** A window replay running low: fetch the next window (in the background) and add it. */
+  topUpReplay() {
+    const r = this.replay;
+    if (!r?.more || r.fetching || !this.feed?.loadWindow) return;
+    r.fetching = true;
+    const f = this.feed;
+    const last = r.all[r.all.length - 1].time;
+    f.loadWindow(last + this.tf.sec)
+      .then((w) => {
+        if (this.replay !== r || this.feed !== f || !w) return;
+        r.all = r.all.concat(w.bars.filter((b) => b.time > last));
+        r.more = w.more && w.bars.length > 0;
+        this.syncReplayBar();
+      })
+      .catch(() => { r.more = false; })
+      .finally(() => { r.fetching = false; });
+  }
+
+  /** Starts a replay at the bar at or before target, or at the oldest one (saying so) when it's further back. */
+  replayAtOrOldest(target) {
     let i = this.indexAtOrBefore(target);
     if (i < 0) {
       this.hooks.onReplay?.(this, 'notice', t('chart.replay.tooFarBack'));
@@ -1671,8 +1795,7 @@ export class ChartView {
   }
 
   /** Replays from candle i: candles after it are hidden until played. */
-  startReplay(i) {
-    const all = this.replay?.all || this.bars;
+  startReplay(i, all = this.replay?.all || this.bars) {
     if (!all.length) return;
     clearInterval(this.replay?.timer);
     const speed = this.replay?.speed || 1;
@@ -1697,7 +1820,9 @@ export class ChartView {
   replayStep() {
     const r = this.replay;
     if (!r || this.replayPick || !this.feed) return false;
+    if (r.more && r.all.length - r.idx < 500) this.topUpReplay();
     if (r.idx >= r.all.length - 1) {
+      if (r.more) return true; // the next window is on its way: wait for it
       this.pauseReplay();
       this.hooks.onReplay?.(this, 'end');
       return false;
@@ -1717,7 +1842,7 @@ export class ChartView {
   playReplay() {
     const r = this.replay;
     if (!r || r.playing || this.replayPick || !this.feed) return;
-    if (r.idx >= r.all.length - 1) { this.hooks.onReplay?.(this, 'end'); return; }
+    if (r.idx >= r.all.length - 1 && !r.more) { this.hooks.onReplay?.(this, 'end'); return; }
     r.playing = true;
     r.timer = setInterval(() => { if (!this.replayStep()) this.pauseReplay(); }, 1000 / r.speed);
     this.syncReplayBar();
@@ -1753,7 +1878,7 @@ export class ChartView {
     bar.querySelector('.rp-time').textContent = d
       ? `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}${this.tf.daily ? '' : ` ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`}`
       : '';
-    bar.querySelector('[data-rp="step"]').disabled = r.idx >= r.all.length - 1;
+    bar.querySelector('[data-rp="step"]').disabled = r.idx >= r.all.length - 1 && !r.more;
   }
 
   /** Leaves the replay and reloads the live chart. */
@@ -1987,6 +2112,15 @@ export class ChartView {
       }
     }
     this.updateIndicatorLegend();
+    // One eye for all of them (issue #19), once there are two or more: hides all while any is shown.
+    const all = this.q('.lg-all');
+    const entries = [...this.live.values()];
+    const anyShown = entries.some((e) => !isHidden(e.inst));
+    all.hidden = entries.length < 2;
+    all.innerHTML = anyShown ? ICON_EYE : ICON_EYE_OFF;
+    all.title = t(anyShown ? 'chart.indHideAll' : 'chart.indShowAll');
+    all.setAttribute('aria-label', all.title);
+    all.setAttribute('aria-pressed', String(anyShown));
     this.updateLegend(this.lastCrosshair);
     requestAnimationFrame(() => this.positionPaneLegends());
   }

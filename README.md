@@ -107,7 +107,7 @@ A free, open-source charting platform.
   - **Volume:** Volume, OBV, A/D, CMF, Chaikin Oscillator, PVT, Volume Oscillator, Klinger, Ease of Movement, Negative and Positive Volume Index, PVO, Volume-Weighted MACD.
   - **Volatility:** ATR, Historical Volatility, BB Width, Standard Deviation, ATR %, Chaikin Volatility, Ulcer Index, Mass Index, Relative Volatility Index.
 - Shaded bands and clouds; every setting and color is editable.
-- **Hide without removing:** the eye button next to an indicator in the legend hides everything it draws (lines, bands, markers, trade lines) and brings it back with the same settings.
+- **Hide without removing:** the eye button next to an indicator in the legend hides everything it draws (lines, bands, markers, trade lines) and brings it back with the same settings. With two or more indicators, the eye next to the symbol hides or shows them all at once.
 - **Your own indicators in JavaScript**, with a built-in editor. See [below](#writing-your-own-indicators).
 - **Community scripts:** browse indicators and strategies other traders published (Indicators → **Community**), sort by most liked or newest, and add one to your chart with a click. Publish your own from the script editor. See [Sharing scripts](#sharing-scripts-with-everyone).
 
@@ -123,6 +123,7 @@ A free, open-source charting platform.
 
 **Bar replay and paper trading**
 - **Back to now:** scrolled back in history, the » button in the corner of the chart brings the latest candle back into view.
+- **Deeper history:** scroll back or replay further than a chart first loads (desktop app and `npm start`). See [Downloaded history](#downloaded-history).
 - **Bar replay:** go back to any point in history and replay the chart candle by candle.
   - Start from a candle you click, a date, or a random point.
   - Step one candle at a time, or play at 0.5× to 10× (candles per second).
@@ -144,7 +145,7 @@ A free, open-source charting platform.
   - **Arrow symbols:** up and down arrows with an optional label (a count, a note…) and an adjustable size; the label and the arrow scale together.
   - **Analysis:** Fibonacci retracement, measure, long position, short position (click the entry, then the target; or click twice in one spot for a ready-made one).
 - **Editing:** drag drawings and their handles. Change colors from the drawing's toolbar, and hide the labels of a position or anchored VWAP there too.
-- **Exact values:** double-click a drawing (or press the pencil in its toolbar) to type the price and date of each of its points, the entry, target and stop of a position, and a label for a line, level or rectangle.
+- **Exact values:** double-click a drawing (or press the pencil in its toolbar) to type the price and date of each of its points, the entry, target and stop of a position, and a label for a line, level or rectangle, placed at its left, middle or right.
 - **Magnet:** the magnet button in the drawing toolbar cycles **off → weak → strong**. Weak snaps a point you place or drag to the bar's open, high, low or close when the pointer is close to it; strong always snaps to the nearest of the four. A ring shows where it is snapping.
 - **Fib retracement settings:** the gear on a selected Fib opens its levels and options. Change a level's number (0.5 is 50%; "50%" works too), color, or turn it off; add or remove levels; show or hide the trend line, level numbers, prices and the background; extend the lines to the left or right; and space the levels on a log scale.
 - **Line style:** a selected trend line, ray, extended line, arrow, channel or level line can be solid, dashed or dotted, and any thickness from 1 to 20 px, from the drawing's toolbar.
@@ -166,10 +167,12 @@ A free, open-source charting platform.
 
 | Your computer | File |
 | --- | --- |
-| **Windows** (almost every PC) | `Wickline-for-Windows-Portable-x.y.z.exe` (no install, just run it), or the installer `Wickline-for-Windows-Setup-x.y.z.exe` (adds a Start menu entry) |
+| **Windows** (almost every PC) | `Wickline-for-Windows-Portable-x.y.z.exe` (no install, just run it), or the installer `Wickline-for-Windows-Setup-x.y.z.exe` (adds a Start menu entry, updates itself) |
 | **Mac with Apple silicon** (M1, M2, M3, M4 and later) | `Wickline-for-Mac-Apple-Silicon-x.y.z.dmg`. First launch: macOS warns once. **Don't click Move to Trash**: click **Cancel** (or **Done**), then **System Settings → Privacy & Security → Open Anyway** |
 | Mac with an Intel processor (older Macs) | `Wickline-Intel-Mac-x.y.z.dmg` |
-| Linux | `Wickline-Linux-x.y.z.AppImage` (any distribution) or `Wickline-Linux-x.y.z.deb` (Debian, Ubuntu) |
+| Linux | `Wickline-Linux-x.y.z.AppImage` (any distribution, updates itself) or `Wickline-Linux-x.y.z.deb` (Debian, Ubuntu) |
+
+**Updates:** the Windows installer and the Linux AppImage download new versions by themselves (checked against the release's SHA-512) and install them when you restart. The portable app, the .deb and the Mac app show a notice with the download link instead. Turn either off under ⚙ (Data sources) → "Tell me when a new version of Wickline is out".
 
 Not sure which Mac you have? Apple menu → **About This Mac**: "Chip: Apple M…" is Apple silicon, "Processor: … Intel" is Intel.
 
@@ -230,11 +233,25 @@ npx serve public
 - **Binance, Binance Futures, Coinbase, Bybit and OKX** supply crypto, with every trade in real time.
 - **CoinGecko** (its free API, no key) supplies the crypto heatmap's market caps and changes, fetched at most every 3 minutes.
 - **Deribit** (its public API, no key) supplies Bitcoin and Ether option chains in real time. US stock and ETF option chains come from Yahoo, about 15 minutes delayed.
+- **Binance's public archive** ([data.binance.vision](https://data.binance.vision)) supplies older crypto history, and **Alpaca** older US stock history if you add a free key. See below.
 
 ```bash
 npm install
 npm start          # http://localhost:5173 — PORT=8080 HOST=0.0.0.0 npm start to change
 ```
+
+### Downloaded history
+
+A chart first loads a recent stretch, and you can scroll or replay further back. The older bars are downloaded and kept on your computer, so each month downloads once and then works offline.
+
+- **Crypto** (Binance and Binance Futures, charts under an hour): minute bars back to 2017 from Binance's public archive, each file checked against its published checksum. Hourly and longer charts page back through the exchange as before.
+- **US stocks and ETFs, with a free [Alpaca](https://alpaca.markets) key:** 1-minute bars back to 2016. Add the key under ⚙ (Data sources) → **Alpaca**. It's kept on your computer and sent only to Alpaca.
+- **Without a key:** Yahoo's intraday history is short (1-minute bars for about 30 days, 5- to 30-minute for 60 days, hourly for about two years). Wickline fetches all of it and keeps what it has seen, so a chart's history grows from the day you start using it.
+- **Replay far back:** a replay years back plays from a window around its date and downloads more as it goes, so only the months it reaches are needed.
+- **Small downloads just happen** (the next month when you scroll back, the last few months when you open a chart). **A big one asks first**, on the chart, with its size. While anything downloads, ↓ in the status bar shows it, with progress and Cancel.
+- **Size limit** (2 GB by default, under ⚙ → Downloaded history): when it's full, the symbols you haven't opened for longest are deleted first. You can also turn automatic downloads off, or delete everything.
+
+The desktop app keeps it in its own data folder. With `npm start` it goes to `~/.wickline` (set `WICKLINE_DATA_DIR` for another folder).
 
 ### Website version: optional Twelve Data key
 

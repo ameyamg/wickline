@@ -2,10 +2,12 @@
 
 | Your computer | File |
 | --- | --- |
-| **Windows** (almost every PC) | [Wickline-for-Windows-Portable-{version}.exe](https://github.com/{repo}/releases/download/v{version}/Wickline-for-Windows-Portable-{version}.exe) (no install, just run it) · or the installer: [Wickline-for-Windows-Setup-{version}.exe](https://github.com/{repo}/releases/download/v{version}/Wickline-for-Windows-Setup-{version}.exe) (adds a Start menu entry) |
+| **Windows** (almost every PC) | [Wickline-for-Windows-Portable-{version}.exe](https://github.com/{repo}/releases/download/v{version}/Wickline-for-Windows-Portable-{version}.exe) (no install, just run it) · or the installer: [Wickline-for-Windows-Setup-{version}.exe](https://github.com/{repo}/releases/download/v{version}/Wickline-for-Windows-Setup-{version}.exe) (adds a Start menu entry, **updates itself**) |
 | **Mac with Apple silicon** (M1, M2, M3, M4 and later) | [Wickline-for-Mac-Apple-Silicon-{version}.dmg](https://github.com/{repo}/releases/download/v{version}/Wickline-for-Mac-Apple-Silicon-{version}.dmg). First launch: macOS warns once. **Don't click Move to Trash**: click **Cancel** (or **Done**), then **System Settings → Privacy & Security → Open Anyway** |
 | Mac with an Intel processor (older Macs) | [Wickline-Intel-Mac-{version}.dmg](https://github.com/{repo}/releases/download/v{version}/Wickline-Intel-Mac-{version}.dmg) |
-| Linux | [AppImage](https://github.com/{repo}/releases/download/v{version}/Wickline-Linux-{version}.AppImage) (any distribution) · [.deb](https://github.com/{repo}/releases/download/v{version}/Wickline-Linux-{version}.deb) (Debian, Ubuntu) |
+| Linux | [AppImage](https://github.com/{repo}/releases/download/v{version}/Wickline-Linux-{version}.AppImage) (any distribution, **updates itself**) · [.deb](https://github.com/{repo}/releases/download/v{version}/Wickline-Linux-{version}.deb) (Debian, Ubuntu) |
+
+**Updates:** the Windows installer and the Linux AppImage download new versions by themselves and install them when you restart. The portable app, the .deb and the Mac app show a notice with the download link instead.
 
 **Which Mac do I have?** Apple menu → About This Mac. "Chip: Apple M…" means Apple silicon; "Processor: … Intel" means Intel.
 

@@ -10,6 +10,19 @@ import { esc } from './util.js';
 export const LABEL_TOOLS = new Set(['trend', 'ray', 'extended', 'arrow', 'channel', 'hline', 'hray', 'vline', 'rect']);
 
 /**
+ * Where a drawing's label sits unless the user picks a place (issue #18): 'left' | 'center' | 'right'
+ * along it (on a vertical line: top / middle / bottom). A horizontal line's label sits at the right
+ * edge, a ray's at its start, a rectangle's at its top-left corner, a line's above its middle.
+ */
+export function labelPosDefault(type) {
+  switch (type) {
+    case 'hline': return 'right';
+    case 'hray': case 'vline': case 'rect': return 'left';
+    default: return 'center';
+  }
+}
+
+/**
  * The points a drawing's editor shows: [{ key, name, price, time }]. price / time say whether that
  * part of the point means anything for the drawing (a horizontal line has no time, a vertical line
  * no price; a position's stop shares the entry's time).
@@ -102,10 +115,16 @@ function render() {
       ${p.time ? `<label class="pe-field"><span>${esc(t(daily ? 'draw.ed.date' : 'draw.ed.dateTime'))}</span>
         <input type="${daily ? 'date' : 'datetime-local'}" data-pe="time" value="${esc(timeToInput(d[p.key]?.time ?? 0, daily))}" aria-label="${esc(`${p.name}: ${t(daily ? 'draw.ed.date' : 'draw.ed.dateTime')}`)}"></label>` : ''}
     </div>`).join('');
+  const vertical = d.type === 'vline';
+  const pos = ['left', 'center', 'right'].includes(d.labelPos) ? d.labelPos : labelPosDefault(d.type);
+  const posNames = vertical ? { left: 'draw.ed.posTop', center: 'draw.ed.posMiddle', right: 'draw.ed.posBottom' }
+    : { left: 'draw.ed.posLeft', center: 'draw.ed.posCenter', right: 'draw.ed.posRight' };
   const label = LABEL_TOOLS.has(d.type) ? `
     <div class="pop-section"></div>
     <label class="pe-field pe-label"><span>${esc(t('draw.ed.label'))}</span>
-      <input type="text" maxlength="60" data-pe="label" value="${esc(d.label || '')}" placeholder="${esc(t('draw.ed.labelPh'))}"></label>` : '';
+      <input type="text" maxlength="60" data-pe="label" value="${esc(d.label || '')}" placeholder="${esc(t('draw.ed.labelPh'))}"></label>
+    <label class="pe-field"><span>${esc(t('draw.ed.labelPos'))}</span>
+      <select data-pe="labelPos">${Object.entries(posNames).map(([v, k]) => `<option value="${v}"${v === pos ? ' selected' : ''}>${esc(t(k))}</option>`).join('')}</select></label>` : '';
   panel.el.innerHTML = `<div class="pop-title">${esc(opts.title)}</div>${rows}${label}
     <div class="pop-actions"><button class="btn-primary" data-pe="done">${esc(t('common.done'))}</button></div>`;
 }
@@ -125,6 +144,7 @@ function ensurePanel() {
     const what = input.dataset.pe;
     if (!panel.d || !panel.opts || !what) return;
     if (what === 'label') { panel.opts.onChange({ label: input.value.trim() || undefined }); return; }
+    if (what === 'labelPos') { panel.opts.onChange({ labelPos: input.value === labelPosDefault(panel.d.type) ? undefined : input.value }); return; }
     const key = input.closest('.pe-point')?.dataset.key;
     if (!key) return;
     const value = what === 'price' ? parsePrice(input.value, panel.opts.decimalComma) : inputToTime(input.value, panel.opts.daily);

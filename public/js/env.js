@@ -33,6 +33,7 @@ export function apiUrl(path) {
 
 let mode = null;
 let detecting = null;
+let features = [];
 
 /** Resolves to 'server' or 'static'. Checked once per page load. */
 export function dataMode() {
@@ -42,6 +43,7 @@ export function dataMode() {
         const r = await fetch(apiUrl('api/health'), { cache: 'no-store', signal: AbortSignal.timeout(2500) });
         const j = r.ok ? await r.json().catch(() => null) : null;
         mode = j?.app === 'wickline' ? 'server' : 'static';
+        features = Array.isArray(j?.features) ? j.features : [];
       } catch {
         mode = 'static';
       }
@@ -52,3 +54,9 @@ export function dataMode() {
 }
 
 export const isServerMode = () => mode === 'server';
+
+/**
+ * Whether this page's own server keeps downloaded history (js/history.js). Only for the server the
+ * page came from: its history endpoints answer nothing else.
+ */
+export const hasHistory = () => mode === 'server' && features.includes('history') && !settings.apiBase.trim();

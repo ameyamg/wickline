@@ -6,7 +6,7 @@ import { t } from './i18n.js';
 import { fixed, store as settings } from './util.js';
 import { STROKE_TOOLS, strokeOf } from './stroke.js';
 import { activeLevels, fibOf, labelText, levelPrice } from './fib.js';
-import { LABEL_TOOLS } from './point-editor.js';
+import { LABEL_TOOLS, labelPosDefault } from './point-editor.js';
 
 export const TOOLS = {
   cursor: { label: t('draw.tool.cursor'), points: 0 },
@@ -342,7 +342,18 @@ export class DrawingLayer {
     return d._vwapCache;
   }
 
-  _x(time) { return this.chart.timeScale().logicalToCoordinate(this.logicalFromTime(time)); }
+  /**
+   * A time's x. logicalToCoordinate() gives 0 for an index between two bars (issue #14: a Fib drawn on
+   * 4h, seen on 1D, had a point at the chart's left edge), so place it between its two bars' x.
+   */
+  _x(time) {
+    const ts = this.chart.timeScale(), l = this.logicalFromTime(time);
+    const a = Math.floor(l), f = l - a;
+    const xa = ts.logicalToCoordinate(a);
+    if (xa == null || f < 1e-9) return xa;
+    const xb = ts.logicalToCoordinate(a + 1);
+    return xb == null ? xa : xa + (xb - xa) * f;
+  }
   _y(price) { return this.series.priceToCoordinate(price); }
 
   /**
@@ -867,13 +878,26 @@ export class DrawingLayer {
     if (!d.label || d.labels === false || !LABEL_TOOLS.has(d.type)) return;
     const x1 = this._x(d.p1.time), y1 = this._y(d.p1.price);
     const x2 = this._x(d.p2.time), y2 = this._y(d.p2.price);
-    let x, y, align = 'center', base = 'bottom';
+    // Where along the drawing (issue #18): 'left' | 'center' | 'right' ('top' / 'middle' / 'bottom'
+    // on a vertical line, stored as the same three values); each type has its own default.
+    const pos = ['left', 'center', 'right'].includes(d.labelPos) ? d.labelPos : labelPosDefault(d.type);
+    const ALIGN = { left: 'left', center: 'center', right: 'right' };
+    let x, y, align = ALIGN[pos], base = 'bottom';
+    const along = (a, b) => (pos === 'left' ? a + 8 : pos === 'right' ? b - 8 : (a + b) / 2);
     switch (d.type) {
-      case 'hline': x = size.width - 8; y = y1 - 4; align = 'right'; break;
-      case 'hray': if (x1 == null) return; x = x1 + 8; y = y1 - 4; align = 'left'; break;
-      case 'vline': if (x1 == null) return; x = x1 + 6; y = 16; align = 'left'; base = 'top'; break;
-      case 'rect': if (x1 == null || x2 == null || y2 == null) return; x = Math.min(x1, x2) + 4; y = Math.min(y1, y2) - 4; align = 'left'; break;
-      default: if (x1 == null || x2 == null || y2 == null) return; x = (x1 + x2) / 2; y = (y1 + y2) / 2 - 6; // above the middle of the line
+      case 'hline': x = along(0, size.width); y = y1 - 4; break;
+      case 'hray': if (x1 == null) return; x = along(x1, size.width); y = y1 - 4; break;
+      case 'vline':
+        if (x1 == null) return;
+        x = x1 + 6; align = 'left';
+        if (pos === 'left') { y = 16; base = 'top'; } else if (pos === 'right') y = size.height - 16; else { y = size.height / 2; base = 'middle'; }
+        break;
+      case 'rect': if (x1 == null || x2 == null || y2 == null) return; x = along(Math.min(x1, x2) - 4, Math.max(x1, x2) + 4); y = Math.min(y1, y2) - 4; break;
+      default: { // lines: above the line, at its left end, middle or right end
+        if (x1 == null || x2 == null || y2 == null) return;
+        const [l, r] = x1 <= x2 ? [[x1, y1], [x2, y2]] : [[x2, y2], [x1, y1]];
+        if (pos === 'left') { x = l[0] + 6; y = l[1] - 6; } else if (pos === 'right') { x = r[0] - 6; y = r[1] - 6; } else { x = (x1 + x2) / 2; y = (y1 + y2) / 2 - 6; }
+      }
     }
     if (y1 == null || y == null) return;
     ctx.save();

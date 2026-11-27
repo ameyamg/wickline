@@ -3,7 +3,8 @@
 #   git tag v0.2.0 && git push origin v0.2.0
 # A draft release appears under Releases with the files; review it and press Publish.
 #
-# Only the six downloads are attached, named for who they're for. GitHub lists release files
+# The six downloads are attached, named for who they're for, with the update files the Windows
+# installer and the Linux AppImage use to update themselves (desktop/updater.mjs). GitHub lists release files
 # alphabetically, so the names put the Apple-silicon Mac and Windows builds first; the release
 # notes (.github/release-notes.md) open with a table of which file to pick.
 name: Build desktop apps
@@ -73,9 +74,10 @@ jobs:
           # Mac builds: name them by processor.
           if [ -f "Wickline-Mac-arm64-$V.dmg" ]; then mv "Wickline-Mac-arm64-$V.dmg" "Wickline-for-Mac-Apple-Silicon-$V.dmg"; fi
           if [ -f "Wickline-Mac-x64-$V.dmg" ]; then mv "Wickline-Mac-x64-$V.dmg" "Wickline-Intel-Mac-$V.dmg"; fi
-          # Only the downloads (not electron-builder's update metadata: latest*.yml, *.blockmap).
+          # The downloads, and the update files of the two builds that update themselves (desktop/updater.mjs):
+          # latest.yml and the installer's .blockmap (Windows), latest-linux.yml (the AppImage). Not the Mac's.
           shopt -s nullglob
-          files=(*.exe *.dmg *.AppImage *.deb)
+          files=(*.exe *.dmg *.AppImage *.deb latest.yml latest-linux.yml *Setup*.exe.blockmap)
           if [ ${#files[@]} -eq 0 ]; then echo "No build files found"; exit 1; fi
           ls -l "${files[@]}"
           gh release upload "v$V" "${files[@]}" --clobber --repo "$GITHUB_REPOSITORY"

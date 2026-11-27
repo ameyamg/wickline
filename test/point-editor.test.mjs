@@ -1,7 +1,7 @@
 // The point editor (public/js/point-editor.js, issue #6): which fields each drawing has, the date box,
 // typed prices and the patches it applies. Run: node test/point-editor.test.mjs
 import assert from 'node:assert/strict';
-import { editablePoints, timeToInput, inputToTime, parsePrice, pointPatch, LABEL_TOOLS } from '../public/js/point-editor.js';
+import { editablePoints, timeToInput, inputToTime, parsePrice, pointPatch, LABEL_TOOLS, labelPosDefault } from '../public/js/point-editor.js';
 
 let n = 0;
 const ok = (name, fn) => { fn(); n++; console.log(`  ok ${name}`); };
@@ -52,6 +52,14 @@ ok('an edit is a patch for one point; a position\'s stop follows the entry\'s ti
   const pos = { type: 'long', p1: { time: 10, price: 100 }, p2: { time: 30, price: 110 }, p3: { time: 10, price: 90 } };
   assert.deepEqual(pointPatch(pos, 'p1', 'time', 15), { p1: { time: 15, price: 100 }, p3: { time: 15, price: 90 } });
   assert.deepEqual(pointPatch(pos, 'p3', 'price', 95), { p3: { time: 10, price: 95 } });
+});
+
+ok('a label sits where it always did until the user moves it (#18)', () => {
+  assert.equal(labelPosDefault('hline'), 'right', 'a horizontal line: at the right edge');
+  assert.equal(labelPosDefault('hray'), 'left', 'a ray: at its start');
+  assert.equal(labelPosDefault('vline'), 'left', 'a vertical line: at the top');
+  assert.equal(labelPosDefault('rect'), 'left', 'a rectangle: top left');
+  assert.equal(labelPosDefault('trend'), 'center', 'a line: above its middle');
 });
 
 console.log(`point-editor: ${n} checks passed`);

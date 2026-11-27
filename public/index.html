@@ -291,10 +291,12 @@
     <span id="source" class="muted"></span>
     <button id="data-mode" class="link-btn status-mode" hidden></button>
     <span id="update" class="update-pill" hidden><a id="update-link" target="_blank" rel="noopener"></a><button id="update-dismiss" title="Not now" aria-label="Dismiss the update notice" data-i18n-title="upd.notNow" data-i18n-aria-label="upd.dismissAria">×</button></span>
+    <button id="dl-btn" class="link-btn dl-btn" hidden></button>
     <span class="spacer"></span>
     <span class="muted hide-sm" data-i18n-html="app.footer">Free &amp; open source · charts by <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener">TradingView Lightweight Charts™</a></span>
     <span id="clock" class="muted"></span>
   </footer>
+  <div id="dl-pop" class="popover dl-pop" hidden></div>
 
   <div id="search-modal" class="modal" hidden>
     <div class="modal-card search-card" role="dialog" aria-label="Symbol search" data-i18n-aria-label="app.search.title">
@@ -379,6 +381,7 @@
         <label><span data-i18n="app.set.language">Language</span><select id="set-lang" class="field"></select></label>
         <div id="set-mode" class="set-mode"></div>
         <label id="set-updates-row" class="set-check" hidden><input type="checkbox" id="set-updates"><span data-i18n="app.set.updates">Tell me when a new version of Wickline is out (asks GitHub Releases now and then; nothing about you is sent)</span></label>
+        <p id="set-version" class="form-note" hidden></p>
         <!-- Desktop app only (desktop/proxy.mjs). A website uses the browser's own proxy settings. -->
         <div id="set-proxy" class="set-proxy" hidden>
           <label><span data-i18n="app.proxy.label">Network proxy</span><select id="set-proxy-mode" class="field">
@@ -391,6 +394,20 @@
             Manual: an HTTP proxy as <code>host:port</code> (e.g. the local port of Clash or v2rayN), or <code>socks5://host:port</code>.</span> <span id="set-proxy-now"></span></p>
         </div>
         <p id="set-proxy-web" class="form-note" hidden></p>
+        <!-- With the app's own server (the desktop app, `npm start`): older bars kept on this computer (js/history-ui.js). -->
+        <div id="set-history" class="set-history" hidden>
+          <div class="set-sec" data-i18n="hist.set.title">Downloaded history</div>
+          <label class="set-check"><input type="checkbox" id="set-hist-auto"><span data-i18n="hist.set.auto">Download older history automatically (small downloads happen by themselves; big ones ask first)</span></label>
+          <label><span data-i18n="hist.set.cap">Size limit</span><select id="set-hist-cap" class="field">
+            <option value="1">1 GB</option><option value="2">2 GB</option><option value="5">5 GB</option><option value="10">10 GB</option><option value="20">20 GB</option><option value="50">50 GB</option>
+          </select></label>
+          <p class="form-note"><span id="set-hist-used"></span> <button type="button" id="set-hist-delete" class="link-btn" data-i18n="hist.set.deleteAll">Delete all</button></p>
+          <div class="set-sec" data-i18n="hist.set.alpaca">Alpaca (US stocks)</div>
+          <p class="form-note" data-i18n-html="hist.set.alpacaNote">With a free <a href="https://alpaca.markets" target="_blank" rel="noopener">Alpaca</a> account, US stock charts go back to 2016 in 1-minute bars. The key is kept on this computer and sent only to Alpaca.</p>
+          <label><span data-i18n="hist.set.keyId">Key ID</span><input id="set-alpaca-id" class="field" autocomplete="off" spellcheck="false"></label>
+          <label><span data-i18n="hist.set.secret">Secret key</span><input id="set-alpaca-secret" class="field" type="password" autocomplete="off" spellcheck="false"></label>
+          <p class="form-note set-alpaca-row"><span id="set-alpaca-status"></span><span class="spacer"></span><button type="button" id="set-alpaca-remove" class="btn-ghost" data-i18n="hist.set.remove" hidden>Remove key</button><button type="button" id="set-alpaca-save" class="btn-ghost" data-i18n="hist.set.connect">Connect</button></p>
+        </div>
         <!-- Only on a static website (no server): the desktop app and `npm start` need no key. -->
         <div id="set-static" class="set-static" hidden>
           <label><span data-i18n="app.set.tdKey">Twelve Data key</span><input id="set-td-key" class="field" autocomplete="off" spellcheck="false" placeholder="Paste your free API key" data-i18n-placeholder="app.set.tdKeyPh"></label>

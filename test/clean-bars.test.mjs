@@ -1,6 +1,6 @@
 // Tests for lib/clean-bars.mjs: bad prints are clipped, real moves are kept.
 import assert from 'node:assert/strict';
-import { cleanSpikes, fixFxDailyCloses, isStaleHistory, spliceFreshTail } from '../lib/clean-bars.mjs';
+import { cleanSpikes, fixFxDailyCloses, fixFxIntradayBars, isStaleHistory, spliceFreshTail } from '../lib/clean-bars.mjs';
 
 const bar = (i, o, h, l, c) => ({ time: i * 300, open: o, high: h, low: l, close: c, volume: 100 });
 // A quiet stretch around 100: bodies 99.9-100.2, wicks +-0.2.
@@ -116,6 +116,19 @@ test('the fresh tail replaces the old one from its first bar on', () => {
   const old = [b(1, 10), b(2, 11), b(3, 12)];
   assert.deepEqual(spliceFreshTail(old, [b(3, 20), b(4, 21), b(9, 22)]).map((x) => [x.time, x.close]), [[1, 10], [2, 11], [3, 20], [4, 21], [9, 22]]);
   assert.equal(spliceFreshTail(old, []), old);
+});
+
+test('one-price forex bars start at the previous close; real candles and bars after a gap stay', () => {
+  const b = (t, o, h, l, c) => ({ time: t, open: o, high: h, low: l, close: c, volume: 0 });
+  const bars = [b(0, 1.1, 1.1, 1.1, 1.1), b(60, 1.2, 1.2, 1.2, 1.2), b(120, 1.15, 1.15, 1.15, 1.15), b(180, 1.15, 1.3, 1.1, 1.2), b(3600, 1.4, 1.4, 1.4, 1.4)];
+  fixFxIntradayBars(bars, 180);
+  assert.deepEqual(bars.map((x) => [x.open, x.high, x.low, x.close]), [
+    [1.1, 1.1, 1.1, 1.1], // the first bar has nothing before it
+    [1.1, 1.2, 1.1, 1.2], // up from the previous close
+    [1.2, 1.2, 1.15, 1.15], // down
+    [1.15, 1.3, 1.1, 1.2], // a real candle: unchanged
+    [1.4, 1.4, 1.4, 1.4], // after a gap (a weekend): unchanged
+  ]);
 });
 
 console.log(failed ? `\n${failed} failed` : '\nall passed');

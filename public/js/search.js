@@ -68,7 +68,7 @@ function score(r, Q, lower) {
   const t = norm(String(r.ticker).replace(/\.P$/, '')); // BTCUSDT.P (perpetual) -> BTCUSDT
   const base = r.category === 'crypto' ? norm(String(r.name).split('/')[0]) : '';
   const name = String(r.name || '').toLowerCase();
-  if (t === Q) return 100;
+  if (t === Q || r.alias) return 100;
   if (base && base === Q) return 92;
   // The query plus an exchange or type suffix: SAP.DE, BTC-USD, GC=F.
   const root = norm(String(r.ticker).split(/[.=^-]/).filter(Boolean)[0]);

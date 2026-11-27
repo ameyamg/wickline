@@ -30,6 +30,7 @@ import {
 import { settings, apiUrl, dataMode } from './env.js';
 import { tdCheckKey } from './twelvedata.js';
 import { checkForUpdate } from './update.js';
+import { initHistoryUI, openHistorySettings } from './history-ui.js';
 import { Screener } from './screener.js';
 import { NewsPanel } from './news.js';
 import { TradingPanel } from './trading.js';
@@ -570,6 +571,7 @@ $('#set-lang').innerHTML = `<option value="">${esc(t('app.set.langSystem'))}</op
   + LANGUAGES.map((l) => `<option value="${l.id}">${esc(l.name)}</option>`).join('');
 
 function openSettings() {
+  openHistorySettings(); // downloaded history: only with the app's own server
   $('#set-lang').value = savedLang() ?? '';
   $('#set-td-key').value = settings.tdKey;
   $('#set-td-rate').value = settings.tdRate;
@@ -577,6 +579,14 @@ function openSettings() {
   $('#set-status').textContent = '';
   $('#set-updates-row').hidden = !IS_DESKTOP;
   $('#set-updates').checked = store.get('updateCheck', true) !== false;
+  // The running version, for bug reports (the desktop app and `npm start`; a static site has no server to ask).
+  const ver = $('#set-version');
+  ver.hidden = true;
+  if (modeNow === 'server') {
+    fetch(apiUrl('api/health')).then((r) => r.json()).then((j) => {
+      if (j?.version) { ver.textContent = t('app.set.version', { version: j.version }); ver.hidden = false; }
+    }).catch(() => {});
+  }
   $('#set-status').className = 'form-note set-status';
   // The Twelve Data key is only for the static website; with a server (the desktop app, `npm start`) nothing needs a key.
   const isStatic = modeNow !== 'server';
@@ -1459,7 +1469,32 @@ async function updateCheck() {
   $('#update-link').href = rel.url;
   box.hidden = false;
   $('#update-dismiss').onclick = () => { store.set('updateDismissed', rel.version); box.hidden = true; };
+  selfUpdate(rel);
+}
+
+// The installed Windows app and the Linux AppImage update themselves (desktop/updater.mjs): the notice
+// downloads the new version, then offers a restart (closing the app installs it too). Elsewhere, or
+// if that fails, it stays a link to the release.
+let selfRel = null;
+async function selfUpdate(rel) {
+  const d = window.wicklineDesktop;
+  if (selfRel || !d?.canSelfUpdate || !(await d.canSelfUpdate().catch(() => false))) return;
+  selfRel = rel;
+  const link = $('#update-link');
+  const asLink = () => { link.textContent = t('upd.available', { version: rel.version }); link.href = rel.url; link.target = '_blank'; link.onclick = null; };
+  d.onUpdateStatus((s) => {
+    if (s.state === 'downloading') link.textContent = t('upd.downloading', { version: s.version || rel.version, pct: s.percent ?? 0 });
+    else if (s.state === 'ready') {
+      link.textContent = t('upd.ready', { version: s.version || rel.version });
+      link.href = '#';
+      link.removeAttribute('target');
+      link.onclick = (e) => { e.preventDefault(); d.installUpdate(); };
+    } else if (s.state === 'error' || s.state === 'none') { asLink(); selfRel = null; }
+  });
+  d.downloadUpdate().catch(() => { asLink(); selfRel = null; });
 }
 setTimeout(updateCheck, 5000);
+// Downloaded history: the downloads indicator in the status bar (js/history-ui.js).
+if (!POPOUT) initHistoryUI({ openSettings });
 setInterval(updateCheck, 12 * 3600 * 1000);
 $('#set-updates').addEventListener('change', (e) => { store.set('updateCheck', e.target.checked); updateCheck(); });

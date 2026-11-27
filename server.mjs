@@ -12,16 +12,22 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import { fetchUsList } from './lib/market-lists.mjs';
-import { cleanSpikes, fixFxDailyCloses, isStaleHistory, spliceFreshTail } from './lib/clean-bars.mjs';
+import { cleanSpikes, fixFxDailyCloses, fixFxIntradayBars, isStaleHistory, spliceFreshTail } from './lib/clean-bars.mjs';
 import { technicals, buildRow, insights } from './lib/screener.mjs';
 import { parseFeed, buildNameIndex, buildStories, rankStories, CRYPTO } from './lib/news.mjs';
 import { parseFomc, shapeEcon, shapeEarnings } from './lib/calendar.mjs';
 import { MARKETS, MARKET_ORDER, FX_FALLBACK, usCountries, quoteCapUsd, shapeIntlEarnings, shapeListings, mergeMarkets } from './lib/markets.mjs';
 import { HEATMAP_MARKETS, heatmapMarket, marketStocks } from './lib/heatmap-markets.mjs';
+import { metalFutures } from './lib/search-aliases.mjs';
 import { optionsQuery, optionsBody } from './lib/options.mjs';
 import { communityFile, isCommunityPath } from './lib/community.mjs';
 import { envProxy, onServerProxyChange, setServerProxy } from './lib/proxy.mjs';
-import { parseTf, yahooPlan, aggregateSessions, sessionStart } from './public/js/timeframes.js';
+import { parseTf, yahooPlan, basePlan, aggregateSessions, sessionStart } from './public/js/timeframes.js';
+import { offsetAt } from './lib/tz.mjs';
+import { History } from './lib/history.mjs';
+import { monthOf } from './lib/history-store.mjs';
+import { alpacaSymbol, alpacaBars, inUsSession, isBinanceProvider } from './lib/history-sources.mjs';
+import os from 'node:os';
 
 // The app's version (package.json), reported by /api/health for the desktop app's update notice.
 const VERSION = (() => { try { return JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version; } catch { return null; } })();
@@ -129,12 +135,14 @@ function normalizeChart(json, tfCfg) {
   const ts = res.timestamp || [];
   const q = res.indicators?.quote?.[0] || {};
   const off = m.gmtoffset || 0; // show times in the exchange's local time
+  // ...each bar at its own day's offset, so a summer bar is still at 9:30 in winter (lib/tz.mjs).
+  const tz = m.exchangeTimezoneName || null;
 
   let bars = [];
   for (let i = 0; i < ts.length; i++) {
     const o = q.open?.[i], h = q.high?.[i], l = q.low?.[i], c = q.close?.[i];
     if (o == null || h == null || l == null || c == null) continue;
-    let t = ts[i] + off;
+    let t = ts[i] + offsetAt(tz, ts[i], off);
     if (tfCfg.daily) t = Math.floor(t / DAY) * DAY;
     bars.push({ time: t, open: o, high: h, low: l, close: c, volume: q.volume?.[i] ?? 0 });
   }
@@ -174,16 +182,22 @@ function normalizeChart(json, tfCfg) {
   if (!tfCfg.daily) bars = cleanSpikes(bars);
   // Daily forex bars come with each finished day's close equal to its open: rebuild the closes.
   if (tfCfg.interval === '1d' && m.instrumentType === 'CURRENCY') fixFxDailyCloses(bars);
+  // Intraday forex bars are often one price each (dashes, not candles): start each at the previous close.
+  if (!tfCfg.daily && m.instrumentType === 'CURRENCY') {
+    const step = (parseInt(tfCfg.interval, 10) || 0) * ({ m: 60, h: 3600 }[tfCfg.interval.slice(-1)] || 0);
+    fixFxIntradayBars(bars, step ? step * 3 : Infinity);
+  }
 
   // Grouped timeframes restart at each session's open (from Yahoo's trading periods; a day they
   // don't cover starts at its first bar). The chart starts live bars of a new session there too.
   const sess = tfCfg.daily ? null : sessionOpens(m, off, tfCfg.prepost);
+  const base = bars; // before grouping: what downloaded history keeps (recordYahoo)
   if (tfCfg.aggregate) {
     const anchor = sess.starts.length ? (t) => sessionStart(t, null, sess.starts) : null;
     bars = aggregateSessions(bars, tfCfg.aggregate, { anchor });
   }
 
-  return {
+  const out = {
     meta: {
       symbol: m.symbol,
       name: m.longName || m.shortName || m.symbol,
@@ -197,6 +211,9 @@ function normalizeChart(json, tfCfg) {
     },
     bars,
   };
+  // For downloaded history, not sent to the page (not enumerable, so JSON leaves them out).
+  Object.defineProperty(out, 'history', { value: { base, tz, off, type: m.instrumentType || '', currency: m.currency || '' } });
+  return out;
 }
 
 async function yahooChart(symbol, tf, live, prepost = false) {
@@ -223,6 +240,7 @@ async function yahooChart(symbol, tf, live, prepost = false) {
   if (fromMinutes && /^[A-Z.]{1,6}\d{6}[CP]\d{8}$/.test(symbol)) return minutes();
   const json = await yahooGet(`/v8/finance/chart/${encodeURIComponent(symbol)}?${params}`, live ? 8000 : 60000);
   const out = normalizeChart(json, { ...cfg, prepost: prepost && !cfg.daily });
+  noteYahoo(symbol, cfg, prepost && !cfg.daily, out, live);
   if (fromMinutes && !out.bars.length && out.meta.type === 'OPTION') return { ...out, bars: (await minutes()).bars };
   if (!live && !cfg.aggregate) return freshenTail(symbol, cfg, json, out, prepost);
   return out;
@@ -250,6 +268,226 @@ async function freshenTail(symbol, cfg, json, out, prepost) {
     return { ...out, bars: spliceFreshTail(out.bars, fresh.bars) };
   } catch {
     return out; // the old copy is still better than nothing; the chart refuses to glue across the gap
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Downloaded history (lib/history.mjs): older bars than a chart's first load, kept on this computer.
+// Yahoo's intraday history is short (1-minute bars for 30 days, 5- to 30-minute ones for 60, hourly
+// for two years), so what charts load is kept, and opening a 1-minute chart fetches all 30 days.
+// US stocks with the user's Alpaca key: 1-minute bars since 2016. Crypto: Binance's archive.
+// ---------------------------------------------------------------------------
+
+let history = null;
+const yahooInfo = new Map(); // symbol -> { tz, off, sessionOpen, type, currency } from its last chart
+const recorded = new Map(); // series -> when a live answer was last kept
+
+/** Keeps a Yahoo chart answer's bars (not the one still forming), in UTC, in the history store. */
+function noteYahoo(symbol, cfg, prepost, out, live) {
+  const h = out.history;
+  if (!h) return;
+  yahooInfo.set(symbol, { tz: h.tz, off: h.off, sessionOpen: out.meta.sessionOpen, type: h.type, currency: h.currency });
+  if (yahooInfo.size > 5000) yahooInfo.clear();
+  if (!history || cfg.daily || !h.base.length) return;
+  const key = { provider: 'yahoo', symbol, interval: cfg.interval + (prepost ? '+ext' : '') };
+  const id = `${symbol}|${key.interval}`;
+  if (live && Date.now() - (recorded.get(id) || 0) < 10 * 60000) return; // the live refresh: now and then
+  recorded.set(id, Date.now());
+  if (recorded.size > 5000) recorded.clear();
+  const now = Date.now() / 1000;
+  const byMonth = new Map();
+  for (const b of h.base) {
+    const utc = b.time - offsetAt(h.tz, b.time - h.off, h.off);
+    if (utc + cfg.spacing > now) continue;
+    const ym = monthOf(utc);
+    if (!byMonth.has(ym)) byMonth.set(ym, []);
+    byMonth.get(ym).push({ ...b, time: utc });
+  }
+  for (const [ym, bars] of byMonth) history.store.writeMonth(key, ym, bars).catch(() => {});
+}
+
+/** All of Yahoo's 1-minute bars (the last 30 days, 7 days a request) into the store, every 6 hours at most. */
+const backfilled = new Map();
+async function yahooBackfill(symbol, prepost) {
+  const id = `${symbol}|${prepost}`;
+  if (Date.now() - (backfilled.get(id) || 0) < 6 * 3600e3) return;
+  backfilled.set(id, Date.now());
+  const cfg = { interval: '1m', spacing: 60, prepost, daily: false };
+  const now = Math.floor(Date.now() / 60000) * 60;
+  for (let start = now - 29 * DAY; start < now - 7 * DAY + 60; start += 7 * DAY) { // the last week comes with the chart
+    const p = new URLSearchParams({ interval: '1m', includePrePost: prepost ? 'true' : 'false', period1: String(start), period2: String(Math.min(now, start + 7 * DAY)) });
+    try {
+      noteYahoo(symbol, cfg, prepost, normalizeChart(await yahooGet(`/v8/finance/chart/${encodeURIComponent(symbol)}?${p}`, 3600e3), cfg), false);
+    } catch { /* keep what came */ }
+  }
+}
+
+/** The Alpaca series for a Yahoo symbol, when there's a key and it's a US stock or ETF; else null. */
+function alpacaKeyFor(symbol, info) {
+  const sym = history?.settings.alpaca && alpacaSymbol(symbol);
+  return sym && info?.currency === 'USD' && /EQUITY|ETF/.test(info.type || '') ? { provider: 'alpaca', symbol: sym, interval: '1m' } : null;
+}
+
+/**
+ * Older bars for a Yahoo chart, ready to show (exchange time, grouped like its first load): from the
+ * user's Alpaca key for US stocks, else what earlier charts kept. before/from: chart time.
+ */
+async function yahooOlder({ symbol, tf, prepost, before, count, from, force, forward = false }) {
+  const t = parseTf(tf);
+  const cfg = t && yahooPlan(t);
+  if (!cfg || cfg.daily) return { bars: [], done: true, ask: null };
+  if (!yahooInfo.has(symbol)) await yahooChart(symbol, tf, true, prepost).catch(() => null);
+  const info = yahooInfo.get(symbol);
+  if (!info) return { bars: [], done: true, ask: null };
+  const toUtc = (c) => c - offsetAt(info.tz, c - info.off, info.off);
+  const toChart = (b) => ({ ...b, time: b.time + offsetAt(info.tz, b.time, info.off) });
+  const opts = { before: toUtc(before), from: from != null ? toUtc(from) : null, force };
+  // forward: bars from `from` on (a replay far back plays through these), else the ones before `before`.
+  const get = (key, n) => (forward ? history.window(key, { from: opts.from, count: n, force }) : history.older(key, { ...opts, count: n }));
+  let bars, r;
+  const alp = alpacaKeyFor(symbol, info);
+  if (alp) {
+    // Minutes of the session the chart shows, grouped from its open (9:30, or 4:00 with extended hours).
+    r = await get(alp, Math.ceil(count * (t.sec / 60) * (prepost ? 1.3 : 2.6)));
+    const mins = r.bars.filter((b) => inUsSession(b.time, prepost)).map(toChart);
+    const open = (prepost ? 4 : 9.5) * 3600;
+    bars = t.sec > 60 ? aggregateSessions(mins, t.sec, { anchor: (x) => sessionStart(x, open), trimFirst: true }) : mins;
+  } else {
+    const key = { provider: 'yahoo', symbol, interval: cfg.interval + (prepost ? '+ext' : '') };
+    r = await get(key, count * (cfg.aggregate ? cfg.aggregate / cfg.spacing : 1));
+    const base = r.bars.map(toChart);
+    bars = cfg.aggregate ? aggregateSessions(base, cfg.aggregate, { anchor: info.sessionOpen != null ? (x) => sessionStart(x, info.sessionOpen) : null, trimFirst: true }) : base;
+  }
+  if (forward) {
+    bars = bars.filter((b) => b.time >= from).slice(0, count);
+    if (r.more && t.sec > 60 && bars.length > 1) bars.pop(); // the last group may be cut: it comes whole with the next window
+    return { bars, more: r.more, ask: r.ask, source: alp ? 'alpaca' : 'yahoo' };
+  }
+  bars = bars.filter((b) => b.time < before);
+  if (from == null && bars.length > count) bars = bars.slice(bars.length - count);
+  return { bars, done: r.done, ask: r.ask, source: alp ? 'alpaca' : 'yahoo' };
+}
+
+/** A crypto chart's series: Binance or Binance Futures, at the chart's base interval if it's under an hour (else null). */
+function cryptoKey(symbol, tf) {
+  const [src, ticker] = String(symbol || '').split(':');
+  const provider = String(src || '').toLowerCase();
+  const t = parseTf(tf);
+  if (!isBinanceProvider(provider) || !t || t.daily || !/^[A-Z0-9]{2,30}$/.test(ticker || '')) return null;
+  const { native, base } = basePlan(t, 'binance');
+  return base.sec < 3600 ? { provider, symbol: ticker, interval: native } : null;
+}
+
+/** The series a chart downloads into: crypto, or a US stock with an Alpaca key. */
+function downloadKey({ symbol, tf }) {
+  const crypto = cryptoKey(symbol, tf);
+  if (crypto) return crypto;
+  const [src, ticker] = String(symbol || '').split(':');
+  if (src !== 'YAHOO') return null;
+  return alpacaKeyFor(ticker, yahooInfo.get(ticker));
+}
+
+/** Opening a chart: its last months, quietly (and all of Yahoo's 1-minute bars for a 1-minute chart). */
+async function historyPrefetch({ symbol, tf, prepost }) {
+  const key = downloadKey({ symbol, tf });
+  if (key) await history.prefetch(key);
+  const [src, ticker] = String(symbol || '').split(':');
+  const t = parseTf(tf);
+  if (src === 'YAHOO' && t && !t.daily && yahooPlan(t).interval === '1m' && history.settings.auto) yahooBackfill(ticker, !!prepost).catch(() => {});
+}
+
+/** Whether a key works: a week of AAPL. */
+async function testAlpaca({ keyId, secret }) {
+  if (!keyId || !secret) return { ok: false, error: 'missing' };
+  try {
+    const now = Date.now() / 1000;
+    const bars = await alpacaBars('AAPL', now - 7 * DAY, now, { keyId: String(keyId).trim(), secret: String(secret).trim() });
+    return { ok: bars.length > 0, error: bars.length ? null : 'empty' };
+  } catch (e) {
+    return { ok: false, error: e.code === 'alpaca-auth' ? 'auth' : e.message };
+  }
+}
+
+/**
+ * History requests come only from Wickline's own page: they carry X-Wickline (which a page on another
+ * site can't send without a preflight this server refuses), any Origin is this server's, and the Host
+ * is an address or localhost, never a name (a DNS-rebinding page can't pretend to be this server).
+ */
+function trustedRequest(req) {
+  if (req.headers['x-wickline'] !== '1') return false;
+  const host = String(req.headers.host || '').toLowerCase();
+  const hostname = host.replace(/:\d+$/, '');
+  if (!(hostname === 'localhost' || /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname) || /^\[[0-9a-f:.]+\]$/.test(hostname))) return false;
+  const origin = req.headers.origin;
+  if (!origin) return true;
+  try { return new URL(origin).host.toLowerCase() === host; } catch { return false; }
+}
+
+function readJson(req, limit = 16384) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks = [];
+    req.on('data', (c) => { size += c.length; if (size > limit) { reject(Object.assign(new Error('Too large'), { status: 413 })); req.destroy(); } else chunks.push(c); });
+    req.on('end', () => { try { resolve(chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}); } catch { reject(Object.assign(new Error('Bad JSON'), { status: 400 })); } });
+    req.on('error', reject);
+  });
+}
+
+/** Like sendJson, without the open CORS header: only Wickline's own page reads these. */
+function sendPrivate(res, status, body) {
+  res.writeHead(status, { 'Content-Type': MIME['.json'], 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(body));
+}
+
+async function handleHistory(url, req, res) {
+  if (!trustedRequest(req)) return sendPrivate(res, 403, { error: 'Forbidden' });
+  if (!history) return sendPrivate(res, 404, { error: 'Downloaded history is off on this server' });
+  const route = url.pathname.slice('/api/history/'.length);
+  const p = url.searchParams;
+  const num = (v) => (v == null || v === '' ? null : Number(v));
+  try {
+    if (req.method === 'POST') {
+      const body = await readJson(req);
+      if (route === 'settings') {
+        if (body.alpaca) {
+          const test = await testAlpaca(body.alpaca);
+          if (!test.ok) return sendPrivate(res, 200, { ...(await history.status()), alpacaError: test.error });
+        }
+        await history.updateSettings(body);
+        return sendPrivate(res, 200, await history.status());
+      }
+      if (route === 'prefetch') { await historyPrefetch(body); return sendPrivate(res, 200, { ok: true }); }
+      if (route === 'download') {
+        const key = downloadKey(body);
+        if (!key) return sendPrivate(res, 400, { error: 'This chart has no history to download' });
+        const job = await history.download(key, { from: num(body.from) ?? 0 });
+        return sendPrivate(res, 200, { id: job.id });
+      }
+      if (route === 'cancel') return sendPrivate(res, 200, { ok: history.cancel(Number(body.id)) });
+      if (route === 'delete') { await history.remove(body.symbol ? String(body.symbol) : null); return sendPrivate(res, 200, await history.status()); }
+      return sendPrivate(res, 404, { error: 'Not found' });
+    }
+    if (route === 'status') return sendPrivate(res, 200, await history.status());
+    const forward = p.get('forward') === '1';
+    const before = forward ? (num(p.get('before')) ?? Date.now() / 1000 + 86400) : num(p.get('before'));
+    if (!Number.isFinite(before)) return sendPrivate(res, 400, { error: 'before required' });
+    if (forward && !Number.isFinite(num(p.get('from')))) return sendPrivate(res, 400, { error: 'from required' });
+    const count = Math.min(Math.max(num(p.get('count')) || 1500, 1), 50000);
+    const from = num(p.get('from'));
+    if (route === 'bars') { // crypto: the chart's base-interval bars in UTC; the page groups them
+      const key = cryptoKey(p.get('symbol'), p.get('tf'));
+      if (!key) return sendPrivate(res, 400, { error: 'No downloaded history for this chart' });
+      const r = forward ? await history.window(key, { from, count }) : await history.older(key, { before, count, from });
+      return sendPrivate(res, 200, { bars: r.bars.map((b) => [b.time, b.open, b.high, b.low, b.close, b.volume]), done: r.done ?? false, more: r.more ?? false, ask: r.ask });
+    }
+    if (route === 'older') { // Yahoo charts: ready to show
+      const [src, ticker] = String(p.get('symbol') || '').split(':');
+      if (src !== 'YAHOO' || !ticker) return sendPrivate(res, 400, { error: 'symbol required' });
+      return sendPrivate(res, 200, await yahooOlder({ symbol: ticker, tf: p.get('tf') || '1D', prepost: p.get('prepost') === '1', before, count, from, forward }));
+    }
+    return sendPrivate(res, 404, { error: 'Not found' });
+  } catch (e) {
+    return sendPrivate(res, e.status || 502, { error: e.message || String(e), code: e.code || null });
   }
 }
 
@@ -305,7 +543,7 @@ async function yahooScreener(id) {
 async function yahooSearch(q) {
   const params = new URLSearchParams({ q, quotesCount: '25', newsCount: '0', listsCount: '0', enableFuzzyQuery: 'false' });
   const json = await yahooGet(`/v1/finance/search?${params}`, 300000);
-  return (json.quotes || [])
+  const rows = (json.quotes || [])
     .filter((x) => x.symbol && x.quoteType !== 'OPTION')
     .map((x) => ({
       symbol: x.symbol,
@@ -314,6 +552,9 @@ async function yahooSearch(q) {
       type: x.typeDisp || x.quoteType || '',
       quoteType: x.quoteType || '',
     }));
+  // XAUUSD and the like: Yahoo's gold / silver futures first.
+  const extra = metalFutures(q);
+  return [...extra, ...rows.filter((r) => !extra.some((e) => e.symbol === r.symbol))];
 }
 
 // ---------------------------------------------------------------------------
@@ -979,7 +1220,8 @@ function sendJson(res, status, body) {
 
 async function handleApi(url, req, res) {
   const p = url.searchParams;
-  if (url.pathname === '/api/health') return sendJson(res, 200, { app: 'wickline', version: VERSION, features: ['yahoo', 'stream', 'universe', 'screener', 'stock-screener', 'news', 'calendar'] });
+  if (url.pathname === '/api/health') return sendJson(res, 200, { app: 'wickline', version: VERSION, features: ['yahoo', 'stream', 'universe', 'screener', 'stock-screener', 'news', 'calendar', ...(history ? ['history'] : [])] });
+  if (url.pathname.startsWith('/api/history/')) return handleHistory(url, req, res);
   if (url.pathname === '/api/yahoo/stream') return handleStream(url, req, res);
   try {
     const u = /^\/api\/universe\/(us-stocks|us-etfs)$/.exec(url.pathname);
@@ -1088,7 +1330,8 @@ async function handleRequest(req, res) {
 async function routeRequest(req, res) {
   let url;
   try { url = new URL(req.url, `http://${req.headers.host || 'localhost'}`); } catch { return sendJson(res, 400, { error: 'Bad request' }); }
-  if (req.method !== 'GET') { res.writeHead(405); return res.end(); }
+  const historyPost = req.method === 'POST' && url.pathname.startsWith('/api/history/');
+  if (req.method !== 'GET' && !historyPost) { res.writeHead(405); return res.end(); }
   if (url.pathname.startsWith('/api/')) return handleApi(url, req, res);
 
   let rel;
@@ -1098,8 +1341,12 @@ async function routeRequest(req, res) {
   return serveFile(filePath, res);
 }
 
-/** Starts the server (also used by the desktop app). Resolves with the port it listens on. */
-export function startServer({ port = PORT, host = HOST } = {}) {
+/**
+ * Starts the server (also used by the desktop app). Resolves with the port it listens on.
+ * dataDir: where downloaded history is kept (none: no downloaded history).
+ */
+export function startServer({ port = PORT, host = HOST, dataDir = null } = {}) {
+  if (dataDir && !history) history = new History({ dir: dataDir, sources: { yahoo: { first: async () => null, month: null } } });
   return new Promise((resolve, reject) => {
     const server = http.createServer(handleRequest);
     server.once('error', reject);
@@ -1115,6 +1362,6 @@ if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === imp
     await setServerProxy(proxy.url);
     console.log(`Connecting through the proxy ${proxy.url.replace(/\/\/[^@/]*@/, '//')}`);
   }
-  const { port } = await startServer();
+  const { port } = await startServer({ dataDir: process.env.WICKLINE_DATA_DIR || path.join(os.homedir(), '.wickline') });
   console.log(`Wickline running at http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${port}`);
 }

@@ -2,13 +2,14 @@
 // Runs the built-in server on this computer — so stocks, ETFs, forex and futures work without
 // any key, using the user's own internet connection — and shows the app in its own window.
 
-import { app, BrowserWindow, ipcMain, Menu, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, session, shell } from 'electron';
 import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startServer } from '../server.mjs';
 import { setupProxy } from './proxy.mjs';
+import { setupUpdater } from './updater.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ICON = path.join(HERE, '..', 'build', 'icon.png');
@@ -34,16 +35,35 @@ let origin = null;
 let mainWindow = null;
 
 async function startLocalServer() {
+  const dataDir = path.join(app.getPath('userData'), 'history'); // downloaded history (lib/history.mjs)
+  // A port can be taken by another program, or reserved by Windows (Hyper-V, WSL and Docker reserve
+  // ranges, and listening there fails with EACCES): try the next one. The ports are tried in the same
+  // order every time, so the app lands on the same one again and its saved data is still there.
   for (let p = PREFERRED_PORT; p < PREFERRED_PORT + 20; p++) {
     try {
-      const { port } = await startServer({ port: p, host: '127.0.0.1' });
+      const { port } = await startServer({ port: p, host: '127.0.0.1', dataDir });
       return `http://127.0.0.1:${port}`;
     } catch (e) {
-      if (e.code !== 'EADDRINUSE') throw e;
+      console.warn(`Port ${p} is not available (${e.code || e.message}), trying the next one.`);
     }
   }
-  const { port } = await startServer({ port: 0, host: '127.0.0.1' });
+  const { port } = await startServer({ port: 0, host: '127.0.0.1', dataDir });
   return `http://127.0.0.1:${port}`;
+}
+
+/** The app can't start: say why, in the system's language, instead of closing without a word. */
+async function showStartError(e) {
+  console.error('Wickline could not start:', e);
+  let dict = {};
+  try {
+    const { langFromLocale } = await import('../public/js/i18n.js');
+    dict = (await import(`../public/js/lang/${langFromLocale(app.getLocale())}.js`)).default;
+  } catch { /* English below */ }
+  const title = dict['desk.startFail.title'] || 'Wickline could not start';
+  const msg = (dict['desk.startFail.msg'] || 'Something stopped Wickline from starting, so it has to close.\n\n{error}\n\nIf this keeps happening, please report it with this message at github.com/keptaduona/wickline/issues')
+    .replace('{error}', String(e?.stack || e?.message || e).split('\n').slice(0, 4).join('\n'));
+  if (SMOKE) console.log(`Error box: ${title} | ${msg.replace(/\n+/g, ' / ')}`); // automated check: no window to click away
+  else dialog.showErrorBox(title, msg);
 }
 
 // --- window size and position are remembered ------------------------------------
@@ -162,6 +182,11 @@ function runSmokeTest(win) {
       chartError: [...document.querySelectorAll('.cell .overlay.error')].filter((e) => !e.hidden).map((e) => e.innerText)[0] || null,
       markets: document.querySelector('#mk-count')?.textContent,
     })`);
+    // The updater (desktop/updater.mjs) loads lazily: check here that it's in the build, with its feed file.
+    info.updater = await import('electron-updater').then((m) => ((m.autoUpdater ?? m.default?.autoUpdater) ? 'loads' : 'no autoUpdater')).catch((e) => `fails: ${e.message}`);
+    if (app.isPackaged) {
+      try { info.updateFeed = readFileSync(path.join(process.resourcesPath, 'app-update.yml'), 'utf8').replace(/\s+/g, ' ').trim(); } catch { info.updateFeed = 'missing'; }
+    }
     const shot = process.env.WICKLINE_SMOKE_SHOT;
     if (shot) writeFileSync(shot, (await win.webContents.capturePage()).toPNG());
     console.log(`SMOKE ${JSON.stringify({ origin, ...info, errors })}`);
@@ -180,13 +205,7 @@ app.on('activate', () => { if (origin && !BrowserWindow.getAllWindows().length) 
 
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(buildMenu());
-  try {
-    origin = await startLocalServer();
-  } catch (e) {
-    console.error('Could not start the local server:', e);
-    app.quit();
-    return;
-  }
+  origin = await startLocalServer();
   const ses = session.defaultSession;
   ses.setPermissionRequestHandler((contents, permission, callback, details) => {
     callback(allowPermission(permission, details?.requestingUrl || contents?.getURL() || ''));
@@ -195,7 +214,14 @@ app.whenReady().then(async () => {
     allowPermission(permission, requestingOrigin || details?.requestingUrl || contents?.getURL() || '')
   ));
   ses.setDevicePermissionHandler?.(() => false); // no USB, serial or HID devices
-  // Network proxy (Data sources), for places where the data sources are blocked: set before anything connects.
-  await setupProxy({ ses, ipcMain, dir: app.getPath('userData'), isAppUrl }).ready;
+  // Network proxy (Data sources), for places where the data sources are blocked: set before anything
+  // connects. If it can't be set up, the app still opens (without it) rather than not at all.
+  await setupProxy({ ses, ipcMain, dir: app.getPath('userData'), isAppUrl }).ready
+    .catch((e) => console.error('Could not set up the network proxy:', e));
+  // Updates that install themselves (the installed Windows app, the Linux AppImage): desktop/updater.mjs.
+  try { setupUpdater({ ipcMain, isAppUrl, getWindow: () => mainWindow }); } catch (e) { console.error('Updater:', e); }
   mainWindow = createMainWindow();
+}).catch(async (e) => {
+  await showStartError(e);
+  app.quit();
 });

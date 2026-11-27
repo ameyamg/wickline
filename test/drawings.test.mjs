@@ -346,6 +346,43 @@ ok('drawing a symbol paints the arrow and the label, and survives a missing labe
   assert.ok(r.calls.some((c) => c[0] === 'arc'), 'selected: a handle is drawn');
 });
 
+ok('a point between two bars sits between them, not at the left edge (#14)', () => {
+  const l = makeLayer();
+  // Like the chart library: an index between two bars gives 0.
+  const ts = { coordinateToLogical: (x) => x / 10, logicalToCoordinate: (i) => (Number.isInteger(i) ? i * 10 : 0), width: () => 800 };
+  l.chart = { timeScale: () => ts };
+  assert.equal(l._x(5000), 50, 'on a bar');
+  assert.equal(l._x(5250), 52.5, 'a quarter of the way to the next bar');
+  assert.equal(l._x(99500), 995, 'half a bar after the last one');
+});
+
+ok('a line\'s label sits where the user put it (#18)', () => {
+  const l = makeLayer();
+  const at = (d) => {
+    const r = recorder();
+    l._drawItem(r.ctx, d, { width: 800, height: 600 }, false);
+    const i = r.calls.findIndex((c) => c[0] === 'fillText');
+    const align = r.calls.slice(0, i).filter((c) => c[0] === 'set' && c[1] === 'textAlign').at(-1)?.[2];
+    return [r.calls[i][2], align];
+  };
+  const d = place(l, 'trend', { x: 100, y: 300 }, { x: 500, y: 300 });
+  l.updateSelected({ label: 'Hi' });
+  assert.deepEqual(at(d), [300, 'center'], 'a line: above its middle by default');
+  l.updateSelected({ labelPos: 'left' });
+  assert.deepEqual(at(d), [106, 'left']);
+  l.updateSelected({ labelPos: 'right' });
+  assert.deepEqual(at(d), [494, 'right']);
+  l.setTool('hline');
+  l.handleClick({ point: { x: 300, y: 500 } });
+  const h = l.items.at(-1);
+  l.updateSelected({ label: 'Level' });
+  assert.deepEqual(at(h), [792, 'right'], 'a horizontal line: at the right edge by default');
+  l.updateSelected({ labelPos: 'left' });
+  assert.deepEqual(at(h), [8, 'left']);
+  l.updateSelected({ labelPos: 'center' });
+  assert.deepEqual(at(h), [400, 'center']);
+});
+
 ok('the tools are registered', () => {
   assert.equal(TOOLS.arrowUp.points, 1);
   assert.equal(TOOLS.arrowDown.points, 1);

@@ -36,7 +36,7 @@ const check = (name, ok, detail = '') => {
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 app.whenReady().then(async () => {
-  const { server, port } = await startServer({ port: 0, host: '127.0.0.1' });
+  const { server, port } = await startServer({ port: 0, host: '127.0.0.1', dataDir: path.join(profile, 'history') });
   // Like the app: the proxy setting (desktop/proxy.mjs) and the preload the page reaches it through.
   const origin = `http://127.0.0.1:${port}`;
   await setupProxy({ ses: session.defaultSession, ipcMain, dir: profile, isAppUrl: (u) => { try { return new URL(u).origin === origin; } catch { return false; } } }).ready;
@@ -86,7 +86,8 @@ app.whenReady().then(async () => {
     // Issue #7: scrolled back, the » button shows; it brings the newest candle back.
     const latest = await run(`(async () => { const v = window.__wickline.views()[0]; const ts = v.chart.timeScale(); const r = ts.getVisibleLogicalRange();
       ts.setVisibleLogicalRange({ from: r.from - 400, to: r.to - 400 }); await new Promise((ok) => setTimeout(ok, 1500));
-      const btn = v.el.querySelector('.to-latest'); const shown = !btn.hidden; btn.click(); await new Promise((ok) => setTimeout(ok, 1200));
+      const btn = v.el.querySelector('.to-latest'); const shown = !btn.hidden; btn.click();
+      for (let k = 0; k < 20 && !(ts.getVisibleLogicalRange().to >= v.bars.length - 2 && btn.hidden); k++) await new Promise((ok) => setTimeout(ok, 200)); // the scroll animates
       return { shown, back: ts.getVisibleLogicalRange().to >= v.bars.length - 2, hiddenAfter: btn.hidden }; })()`);
     check('the » button brings back the latest candle', latest.shown && latest.back && latest.hiddenAfter, JSON.stringify(latest));
     // Issue #6: a drawing's exact prices and dates, and a label.
@@ -98,11 +99,39 @@ app.whenReady().then(async () => {
       const d = v.drawings.items.find((x) => x.id === 'e2e-ed'); const fields = ed.querySelectorAll('input').length; ed.querySelector('[data-pe="done"]').click(); v.drawings.deleteSelected();
       return { open: !!ed, fields, price: d.p2.price, label: d.label, closed: ed.hidden }; })()`);
     check('the point editor sets a drawing\'s exact price and its label', edit.fields === 5 && edit.price === 123.25 && edit.label === 'e2e' && edit.closed, JSON.stringify(edit));
+    // Issue #18: the label's position, picked in the point editor (the default stores nothing).
+    const lpos = await run(`(async () => { const v = window.__wickline.views()[0]; const b = v.bars, n = b.length;
+      v.drawings.items.push({ id: 'e2e-lp', type: 'trend', color: '#4FA3F7', label: 'e2e', p1: { time: b[n - 30].time, price: b[n - 30].close }, p2: { time: b[n - 3].time, price: b[n - 3].close } });
+      v.drawings.select('e2e-lp'); document.querySelector('.draw-bar [data-db="edit"]').click(); await new Promise((ok) => setTimeout(ok, 200));
+      const sel = document.querySelector('.point-editor [data-pe="labelPos"]'); const d = () => v.drawings.items.find((x) => x.id === 'e2e-lp');
+      const shown = sel?.value; sel.value = 'right'; sel.dispatchEvent(new Event('change', { bubbles: true })); const right = d().labelPos;
+      sel.value = 'center'; sel.dispatchEvent(new Event('change', { bubbles: true })); const back = d().labelPos;
+      document.querySelector('.point-editor [data-pe="done"]').click(); v.drawings.deleteSelected();
+      return { shown, right, back: back ?? null }; })()`);
+    check('a line\'s label can be moved to its right end and back', lpos.shown === 'center' && lpos.right === 'right' && lpos.back === null, JSON.stringify(lpos));
+    // Issue #14: a point between two bars (a Fib drawn on a lower timeframe) is drawn between them, not at the left edge.
+    const between = await run(`(() => { const v = window.__wickline.views()[0]; const b = v.bars, n = b.length, ts = v.chart.timeScale();
+      const t = b[n - 10].time + (b[n - 9].time - b[n - 10].time) / 4; return { x: v.drawings._x(t), a: ts.logicalToCoordinate(n - 10), b: ts.logicalToCoordinate(n - 9) }; })()`);
+    check('a point between two bars is drawn between them', between.x > between.a && between.x < between.b, JSON.stringify(between));
+    // Issue #19: one eye hides every indicator, and shows them again.
+    const hideAll = await run(`(async () => { const v = window.__wickline.views()[0]; const before = v.state.indicators.length; v.addIndicator('sma'); v.addIndicator('rsi');
+      await new Promise((ok) => setTimeout(ok, 300)); const btn = v.el.querySelector('.lg-all'); const shown = !btn.hidden;
+      btn.click(); await new Promise((ok) => setTimeout(ok, 200)); const hidden = v.state.indicators.every((i) => i.hidden);
+      v.el.querySelector('.lg-all').click(); await new Promise((ok) => setTimeout(ok, 200)); const back = v.state.indicators.every((i) => !i.hidden);
+      for (const i of v.state.indicators.slice(before)) v.removeIndicator(i.id);
+      return { shown, hidden, back }; })()`);
+    check('one eye hides all indicators and shows them again', hideAll.shown && hideAll.hidden && hideAll.back, JSON.stringify(hideAll));
     // Bybit and OKX: in the symbol search and as whole markets.
     const exch = await run(`import('./js/datafeed.js').then(async (m) => ({ search: [...new Set((await m.searchCrypto('SOL')).map((r) => r.full.split(':')[0]))],
       markets: Object.fromEntries(await Promise.all(['bybit', 'bybitf', 'okx', 'okxf'].map(async (id) => [id, (await m.loadUniverse(id)).length]))) }))`);
     check('symbol search finds Bybit and OKX spot and perpetuals', ['BYBIT', 'BYBITF', 'OKX', 'OKXF'].every((x) => exch.search.includes(x)), exch.search.join(','));
     check('Markets can list all of Bybit and OKX', Object.values(exch.markets).every((n) => n > 100), JSON.stringify(exch.markets));
+    // Yahoo's 1-minute forex bars are one price each: they start at the previous close, so they're candles, not dashes.
+    await open('YAHOO:EURUSD=X', '1m');
+    // (A minute where Yahoo repeats the previous price stays flat: nothing moved; so does one after a gap.)
+    const fx1 = await run(`(() => { const b = window.__wickline.views()[0].bars.slice(-300);
+      return { n: b.length, bodies: b.filter((x) => x.open !== x.close).length, movedButFlat: b.filter((x, i) => i && x.time - b[i - 1].time <= 180 && x.high === x.low && x.close !== b[i - 1].close).length }; })()`);
+    check('1-minute forex bars that moved are candles, not dashes', fx1.n > 100 && fx1.movedButFlat === 0 && fx1.bodies > fx1.n * 0.3, JSON.stringify(fx1));
     const first = await open('YAHOO:AAPL', '1D');
     check('desktop data mode uses the built-in server', first.mode === 'server', first.mode);
     check('tab title shows symbol and price', /^AAPL [\d,.]+ [▲▼]/.test(first.tabTitle), first.tabTitle);
@@ -111,6 +140,9 @@ app.whenReady().then(async () => {
     await wait(300);
     const dlg = await run(`({ key: document.querySelector('#set-td-key').offsetParent !== null, text: document.querySelector('#set-mode').innerText })`);
     check('Data sources asks for no API key in the desktop app', !dlg.key && /no API key/.test(dlg.text), dlg.text.split('.')[0]);
+    const ver = await run(`(async () => { const want = (await (await fetch('/api/health')).json()).version; const el = document.querySelector('#set-version');
+      return { want, text: el.innerText, shown: !el.hidden }; })()`);
+    check('settings show the app\'s version', ver.shown && ver.text.includes(ver.want), JSON.stringify(ver));
     await run(`document.querySelector('#settings-modal .close').click()`);
 
     // 2. Markets panel lists all US stocks.
@@ -356,7 +388,9 @@ app.whenReady().then(async () => {
     const same = (a, b) => a.length === b.length && a.every((r, i) => near(r.w, b[i].w) && near(r.h, b[i].h));
     const eq8 = await rects();
     const plotW = () => run(`window.__wickline.views().map((v) => v.chart.timeScale().width())`);
-    const plot0 = await plotW();
+    // The charts take the new layout's sizes a frame or more after their panes: wait until they settle.
+    let plot0 = await plotW();
+    for (let k = 0; k < 15; k++) { await wait(200); const p = await plotW(); if (p.join() === plot0.join()) break; plot0 = p; }
     check('the dividers show which way they resize', await run(`(() => { const c = (a) => getComputedStyle(document.querySelector('#charts .split[data-axis="' + a + '"]')).cursor;
       return document.querySelectorAll('#charts .split').length === 7 && c('x') === 'col-resize' && c('y') === 'row-resize'; })()`));
     await drag('1.0', 80, 0);
@@ -470,7 +504,36 @@ app.whenReady().then(async () => {
     const btc = await search('BTC');
     const sources = new Set(btc.map((r) => r.src));
     check('one search covers stocks and crypto exchanges, each row labeled', btc.every((r) => r.src) && sources.has('Yahoo') && sources.has('Binance'), [...sources].join(', '));
+    const xau = await search('XAUUSD');
+    check('XAUUSD finds gold futures first', xau[0]?.t === 'GC=F' && xau[0]?.src === 'Yahoo', JSON.stringify(xau.slice(0, 3)));
     await run(`document.querySelector('#search-modal .close').click()`);
+
+    // 10b. Downloaded history: older crypto bars from Binance's archive, a replay far back from a window
+    // of it, asking first when automatic downloads are off, the settings, and only this page may ask.
+    const histNoHeader = await run(`fetch('/api/history/status').then((r) => r.status)`);
+    check('history answers only requests from Wickline itself', histNoHeader === 403, String(histNoHeader));
+    await open('BINANCE:BTCUSDT', '15m');
+    const scroll = await run(`(async () => { const v = window.__wickline.views()[0]; const f = v.feed; let n = 0;
+      for (let k = 0; k < 6 && f.canLoadMore && v.bars[0].time > Date.now() / 1000 - 40 * 86400; k++) n += await v.loadOlder();
+      return { history: f.history, n, first: v.bars[0].time, ordered: v.bars.every((b, i, a) => !i || b.time > a[i - 1].time) }; })()`);
+    check('crypto charts scroll back past 31 days from the archive', scroll.history && scroll.ordered && scroll.first < Date.now() / 1000 - 40 * 86400, JSON.stringify({ ...scroll, first: new Date(scroll.first * 1000).toISOString().slice(0, 10) }));
+    await open('BINANCE:BTCUSDT', '1m');
+    const replay = await run(`(async () => { const v = window.__wickline.views()[0]; v.startReplayPick(); const target = Date.parse('2024-03-12T15:30:00Z') / 1000 + v.feed.shift;
+      await v.replayToDate(new Date(target * 1000).toISOString().slice(0, 16)); const r = v.replay;
+      const out = { started: !!r, at: r && v.bars.at(-1).time === target, window: r?.all.length, more: r?.more, ask: !v.q('.hist-ask').hidden }; v.stopReplay(); return out; })()`);
+    check('a replay years back starts at its date, from a window of history', replay.started && replay.at && replay.window >= 1000 && replay.more && !replay.ask, JSON.stringify(replay));
+    const hset = (body) => run(`fetch('/api/history/settings', { method: 'POST', headers: { 'X-Wickline': '1', 'Content-Type': 'application/json' }, body: JSON.stringify(${JSON.stringify(body)}) }).then((r) => r.json())`);
+    await hset({ auto: false });
+    await open('BINANCE:XRPUSDT', '15m'); // a chart not opened before in this run: nothing of it downloaded yet
+    const asked = await run(`(async () => { const v = window.__wickline.views()[0]; for (let k = 0; k < 20 && !v.histAsk && v.feed.canLoadMore; k++) await v.loadOlder();
+      const box = v.q('.hist-ask'); const out = { shown: !box.hidden, text: box.innerText.slice(0, 80) }; v.answerHistory(false); return { ...out, hidden: box.hidden }; })()`);
+    await hset({ auto: true });
+    check('with automatic downloads off, the chart asks before downloading', asked.shown && /XRPUSDT/.test(asked.text) && asked.hidden, JSON.stringify(asked));
+    await run(`document.querySelector('#settings-btn').click()`);
+    await wait(800);
+    const hs = await run(`({ shown: !document.querySelector('#set-history').hidden, used: document.querySelector('#set-hist-used').textContent })`);
+    await run(`document.querySelector('#settings-modal .close').click()`);
+    check('Data sources show the downloaded history and its size', hs.shown && /MB|KB/.test(hs.used), hs.used);
 
     // 11. News: ranked live headlines with tickers, news for the chart's symbol, economic calendar, earnings.
     await run(`document.querySelector('#nw-btn').click()`);
