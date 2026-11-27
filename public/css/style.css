@@ -286,6 +286,7 @@ body.popout .hide-popout { display: none; }
 .draw-bar > button { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 4px; color: var(--muted); }
 .draw-bar > button:hover { color: var(--text-strong); background: var(--panel-2); }
 .draw-bar > button.db-labels.on { color: var(--text-strong); }
+.draw-bar > button[data-db="lock"].on { color: var(--text-strong); background: var(--accent-soft); }
 .db-stroke { display: flex; align-items: center; gap: 2px; }
 .db-stroke button { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 4px; color: var(--muted); }
 .db-stroke button:hover { color: var(--text-strong); background: var(--panel-2); }

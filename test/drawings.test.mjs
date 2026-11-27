@@ -383,6 +383,49 @@ ok('a line\'s label sits where the user put it (#18)', () => {
   assert.deepEqual(at(h), [400, 'center']);
 });
 
+ok('Duplicate (Ctrl+D) puts a selected copy on top: same points and look, new id, unlocked (#15)', () => {
+  const l = makeLayer();
+  const d = place(l, 'trend', { x: 100, y: 300 }, { x: 300, y: 200 });
+  l.updateSelected({ color: '#2962FF', width: 3, style: 'dashed', locked: true });
+  assert.ok(l.duplicateSelected());
+  assert.equal(l.items.length, 2);
+  const c = l.items[1];
+  assert.notEqual(c.id, d.id);
+  assert.equal(l.selected, c);
+  assert.deepEqual([c.type, c.color, c.width, c.style, c.p1, c.p2], [d.type, d.color, d.width, d.style, d.p1, d.p2]);
+  assert.equal(c.locked, undefined, 'the copy is free to move');
+  assert.equal(d.locked, true, 'the original keeps its lock');
+  c.p1.price = 1; // a deep copy
+  assert.notEqual(d.p1.price, 1);
+  l.select(null);
+  assert.equal(l.duplicateSelected(), false, 'nothing selected');
+});
+
+ok('a locked drawing is selected but not dragged; unlocked, it moves again (#15)', () => {
+  const l = makeLayer();
+  l.setTool('arrowUp');
+  l.handleClick({ point: { x: 300, y: 500 } });
+  const d = l.items[0];
+  assert.ok(l.toggleLockSelected());
+  assert.equal(d.locked, true);
+  l.select(null);
+  assert.equal(l.beginDrag(300, 515), false, 'no drag on the body');
+  assert.equal(l.selected, d, 'but it is selected');
+  assert.equal(l.beginDrag(300, 500), false, 'no drag on a handle either');
+  assert.deepEqual([d.p1.time, d.p1.price], [30000, 50]);
+  l.updateSelected({ text: 'still editable' });
+  assert.equal(d.text, 'still editable');
+  l.toggleLockSelected();
+  assert.equal(d.locked, undefined);
+  assert.ok(l.beginDrag(300, 515));
+  l.dragMove(400, 415);
+  l.endDrag();
+  assert.equal(d.p1.time, 40000);
+  l.toggleLockSelected();
+  assert.ok(l.deleteSelected(), 'a locked drawing can still be deleted');
+  assert.equal(l.items.length, 0);
+});
+
 ok('the tools are registered', () => {
   assert.equal(TOOLS.arrowUp.points, 1);
   assert.equal(TOOLS.arrowDown.points, 1);

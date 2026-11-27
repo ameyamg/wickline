@@ -1417,6 +1417,7 @@ document.addEventListener('keydown', (e) => {
   }
   if (isTyping(e) || anyModal() || !activeView) return;
   if ((e.key === 'Delete' || e.key === 'Backspace') && activeView.deleteSelectedDrawing()) { e.preventDefault(); return; }
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'd' && activeView.duplicateSelectedDrawing()) { e.preventDefault(); return; }
   if (activeView.replay && !activeView.replayPick && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
     if (e.key === 'ArrowRight') { activeView.pauseReplay(); activeView.replayStep(); e.preventDefault(); return; }
     if (e.key === 'ArrowDown') { activeView.toggleReplayPlay(); e.preventDefault(); return; }
