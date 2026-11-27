@@ -2,6 +2,8 @@
 <html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8">
+  <!-- The same policy as server.mjs (PAGE_CSP), for a static copy of the site. Its connect-src also allows any https: server and a local one (Settings → Advanced: Server URL). -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https: http://localhost:* http://127.0.0.1:* wss://data-stream.binance.vision wss://stream.binance.com:9443 wss://fstream.binance.com wss://ws-feed.exchange.coinbase.com wss://stream.bybit.com wss://stream.bytick.com wss://ws.okx.com:8443 wss://wsaws.okx.com:8443 wss://streamer.finance.yahoo.com; object-src 'none'; base-uri 'none'; form-action 'self'">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Wickline</title>
   <meta name="description" content="Free, open-source charting platform: live crypto, stocks, forex, futures, 100 indicators, your own JavaScript indicators, drawing tools, alerts and multi-chart layouts.">
@@ -9,14 +11,7 @@
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/community.css">
   <link rel="stylesheet" href="css/options.css">
-  <script>
-    try {
-      const t = JSON.parse(localStorage.getItem('wickline.theme')); if (t === 'light') document.documentElement.dataset.theme = 'light';
-      // The user's theme colors, saved by js/theme.js, so the first paint already has them.
-      const p = JSON.parse(localStorage.getItem('wickline.paint'));
-      if (p && p.mode === (t === 'light' ? 'light' : 'dark')) for (const k in p.vars) document.documentElement.style.setProperty(k, p.vars[k]);
-    } catch {}
-  </script>
+  <script src="js/first-paint.js"></script>
 </head>
 <body>
   <header class="topbar">

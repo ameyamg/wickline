@@ -1,6 +1,6 @@
 // Tests for server.mjs that need no internet: health check, static files, safety checks.
 import assert from 'node:assert/strict';
-import { startServer } from '../server.mjs';
+import { startServer, PAGE_CSP } from '../server.mjs';
 
 let failed = 0;
 const test = async (name, fn) => {
@@ -26,6 +26,29 @@ await test('serves the app', async () => {
   assert.equal(r.status, 200);
   assert.match(r.headers.get('content-type'), /html/);
   assert.match(await r.text(), /<title>Wickline<\/title>/);
+});
+
+await test('the app page has a Content-Security-Policy, and index.html the same for a static copy', async () => {
+  const r = await get('/');
+  const header = r.headers.get('content-security-policy');
+  assert.equal(header, PAGE_CSP);
+  const html = await r.text();
+  const meta = html.match(/<meta http-equiv="Content-Security-Policy" content="([^"]+)">/)?.[1];
+  assert.ok(meta, 'index.html has a CSP <meta> tag');
+  assert.ok(html.indexOf(meta) < html.search(/<script|<link/), 'the <meta> comes before any script or stylesheet');
+  const parse = (p) => Object.fromEntries(p.split(';').map((d) => d.trim().split(/\s+/)).filter((d) => d[0]).map(([k, ...v]) => [k, v]));
+  const h = parse(header), m = parse(meta);
+  assert.deepEqual(h['script-src'], ["'self'"]);
+  // The same directives, except frame-ancestors (a <meta> can't set it) and a wider connect-src
+  // (a static copy may use any https: server, or a local one).
+  for (const k of Object.keys(h)) if (k !== 'connect-src' && k !== 'frame-ancestors') assert.deepEqual(m[k], h[k], k);
+  assert.deepEqual(Object.keys(m).filter((k) => !h[k]), []);
+  for (const src of h['connect-src']) {
+    assert.ok(m['connect-src'].includes(src) || (src.startsWith('https://') && m['connect-src'].includes('https:')), `the <meta> allows ${src}`);
+  }
+  // Nothing inline that the policy would block.
+  for (const tag of html.match(/<script\b[^>]*>/g)) assert.match(tag, /\ssrc="/, tag);
+  assert.doesNotMatch(html, /<[^>]+\son[a-z]+\s*=/i);
 });
 
 await test('serves scripts as JavaScript', async () => {

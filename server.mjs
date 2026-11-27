@@ -50,6 +50,35 @@ const MIME = {
 
 export const SCRIPT_WORKER_CSP = "default-src 'none'; script-src 'self' 'unsafe-eval'";
 
+// The sites the page itself calls (crypto exchanges, Twelve Data, Yahoo's live stream, the
+// community library on GitHub and the desktop app's update check). The rest goes through this server.
+export const PAGE_CONNECT_SRC = [
+  'https://data-api.binance.vision', 'https://api.binance.com', 'https://fapi.binance.com',
+  'wss://data-stream.binance.vision', 'wss://stream.binance.com:9443', 'wss://fstream.binance.com',
+  'https://api.exchange.coinbase.com', 'wss://ws-feed.exchange.coinbase.com',
+  'https://api.bybit.com', 'https://api.bytick.com', 'wss://stream.bybit.com', 'wss://stream.bytick.com',
+  'https://www.okx.com', 'https://aws.okx.com', 'wss://ws.okx.com:8443', 'wss://wsaws.okx.com:8443',
+  'https://api.twelvedata.com', 'wss://streamer.finance.yahoo.com',
+  'https://raw.githubusercontent.com', 'https://api.github.com',
+];
+
+// The app page: scripts only from the app itself (no inline code, no eval), connections only to
+// the sites above. public/index.html has the same policy in a <meta> tag for a static copy of the
+// site, which also lets it reach any https: server (Settings → Advanced: Server URL) or a local one.
+// The page served from here gets both, and the stricter one wins.
+export const PAGE_CSP = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "worker-src 'self'",
+  "style-src 'self' 'unsafe-inline'", // style="" attributes, and the chart library adds a <style>
+  "img-src 'self' data:",
+  `connect-src 'self' ${PAGE_CONNECT_SRC.join(' ')}`,
+  "object-src 'none'",
+  "base-uri 'none'",
+  "form-action 'self'",
+  "frame-ancestors 'none'", // header only: a <meta> policy can't set it
+].join('; ');
+
 // ---------------------------------------------------------------------------
 // Yahoo Finance relay
 // ---------------------------------------------------------------------------
@@ -1307,6 +1336,7 @@ async function serveFile(filePath, res) {
       // The worker that runs user and community scripts may load only the app's own modules and
       // can't reach the network at all (no fetch, WebSocket or imports from other sites).
       ...(path.basename(filePath) === 'script-worker.js' ? { 'Content-Security-Policy': SCRIPT_WORKER_CSP } : {}),
+      ...(path.extname(filePath).toLowerCase() === '.html' ? { 'Content-Security-Policy': PAGE_CSP } : {}),
     });
     res.end(body);
   } catch {
