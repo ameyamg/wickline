@@ -9,7 +9,8 @@
 - 繪圖工具、價格警示，一個畫面可放 1 到 8 張圖表。
 - 社群腳本庫：發佈你的腳本給所有人使用，一鍵加入別人的腳本。
 - 選股器、熱力圖（含台灣在內的 18 個股票市場與加密貨幣）、新聞與財經日曆、K線回放與模擬交易。
-- 不需註冊帳號、不需 API 金鑰，也不收訂閱費。
+- 更長的歷史資料：加密貨幣 1 分鐘 K 線可回溯到 2017 年，美股用免費的 Alpaca 金鑰（可選）可回溯到 2016 年。資料存在你的電腦上，K 線回放也可以從多年前開始。
+- 不需註冊帳號、不收訂閱費，也不需 API 金鑰（Alpaca 金鑰可選）。
 
 **[下載桌面版](../../releases/latest)**（Windows、macOS、Linux）。下載即可使用，不需任何設定。
 
@@ -21,10 +22,12 @@
 
 | 你的電腦 | 檔案 |
 | --- | --- |
-| **Windows** | `Wickline-for-Windows-Portable-x.y.z.exe`（免安裝，直接執行），或安裝版 `Wickline-for-Windows-Setup-x.y.z.exe`（會加到「開始」功能表） |
+| **Windows** | `Wickline-for-Windows-Portable-x.y.z.exe`（免安裝，直接執行），或安裝版 `Wickline-for-Windows-Setup-x.y.z.exe`（會加到「開始」功能表，會自動更新） |
 | **搭載 Apple 晶片的 Mac**（M1、M2、M3、M4 及更新機型） | `Wickline-for-Mac-Apple-Silicon-x.y.z.dmg` |
 | 搭載 Intel 處理器的 Mac（較舊的 Mac） | `Wickline-Intel-Mac-x.y.z.dmg` |
-| Linux | `Wickline-Linux-x.y.z.AppImage`（任何發行版）或 `Wickline-Linux-x.y.z.deb`（Debian、Ubuntu） |
+| Linux | `Wickline-Linux-x.y.z.AppImage`（任何發行版，會自動更新）或 `Wickline-Linux-x.y.z.deb`（Debian、Ubuntu） |
+
+**更新：**Windows 安裝版與 Linux AppImage 會自動下載新版本，並在重新啟動時安裝。免安裝版、.deb 與 Mac 版會顯示附下載連結的通知。
 
 不確定是哪一種 Mac？蘋果選單 →「關於這台 Mac」：顯示「晶片：Apple M…」的是 Apple 晶片，顯示「處理器：… Intel」的是 Intel。
 
@@ -37,13 +40,15 @@
 
 ## 資料來源
 
-股票、ETF、指數、外匯與期貨行情來自 Yahoo（包括美股、台股、港股、日股等，部分美股資料來自 Nasdaq），加密貨幣來自 Binance、Binance Futures 與 Coinbase，加密貨幣熱力圖的市值來自 CoinGecko，比特幣與以太幣選擇權來自 Deribit。桌面版內建一個小型資料伺服器，只在你的電腦上（`127.0.0.1`）執行；資料透過你自己的網路連線取得，不經過任何第三方伺服器。
+股票、ETF、指數、外匯與期貨行情來自 Yahoo（包括美股、台股、港股、日股等，部分美股資料來自 Nasdaq），加密貨幣來自 Binance、Binance Futures、Coinbase、Bybit 與 OKX，加密貨幣熱力圖的市值來自 CoinGecko，比特幣與以太幣選擇權來自 Deribit。桌面版內建一個小型資料伺服器，只在你的電腦上（`127.0.0.1`）執行；資料透過你自己的網路連線取得，不經過任何第三方伺服器。
+
+**下載的歷史資料：**往前捲動圖表或使用 K 線回放時，應用程式會下載更早的資料並存在你的電腦上：加密貨幣從 2017 年起（Binance 公開封存），美股用你自己的免費 [Alpaca](https://alpaca.markets) 金鑰從 2016 年起（⚙ → 資料來源 → Alpaca；金鑰只存在這台電腦上，只傳送給 Alpaca）。小的下載會自動進行，大的會先詢問。詳見英文版：[Downloaded history](README.md#downloaded-history)。
 
 若你所在的網路無法直接連上 Yahoo、Binance 或 GitHub，可以在桌面版中設定網路代理：⚙（資料來源）→ **網路代理**，使用系統代理，或手動填寫 HTTP / SOCKS5 代理（例如 Clash 的 `127.0.0.1:7890`）。詳見英文說明中的 [Using a proxy](README.md#using-a-proxy)。
 
 ## 介面語言
 
-介面支援繁體中文、简体中文、English、日本語、한국어、Español 與 Português (Brasil)，預設跟隨系統語言。要切換語言，請按右上角的 ⚙（資料來源）→ **語言 (Language)**，選擇後按 **儲存**。
+介面支援繁體中文、简体中文、English、日本語、한국어、Español、Português (Brasil)、Italiano、Deutsch 與 Français，預設跟隨系統語言。要切換語言，請按右上角的 ⚙（資料來源）→ **語言 (Language)**，選擇後按 **儲存**。
 
 ## 意見回饋
 

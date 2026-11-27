@@ -9,7 +9,8 @@ Software de gráficos gratuito y de código abierto (gráficos de velas de accio
 - Herramientas de dibujo, alertas de precio y de 1 a 8 gráficos por pantalla.
 - Biblioteca de la comunidad: publica tus scripts para todos y añade los de otros con un clic.
 - Screener, mapa de calor (18 mercados de acciones, entre ellos España y Brasil, y criptomonedas), noticias y calendario económico, repetición de barras y trading simulado.
-- Sin cuenta, sin claves API y sin suscripción.
+- Historial profundo: los gráficos de criptomonedas por minuto llegan hasta 2017 y los de acciones de EE. UU. hasta 2016 con una clave gratuita de Alpaca (opcional). Se guarda en tu equipo, y la repetición de barras puede empezar años atrás.
+- Sin cuenta ni suscripción, y sin claves API (la de Alpaca es opcional).
 
 **[Descarga la app de escritorio](../../releases/latest)** para Windows, macOS o Linux. Funciona en cuanto la instalas, sin configurar nada.
 
@@ -21,10 +22,12 @@ Descarga el archivo para tu equipo desde la página de [Releases](../../releases
 
 | Tu equipo | Archivo |
 | --- | --- |
-| **Windows** | `Wickline-for-Windows-Portable-x.y.z.exe` (sin instalación, solo ejecútalo) o el instalador `Wickline-for-Windows-Setup-x.y.z.exe` |
+| **Windows** | `Wickline-for-Windows-Portable-x.y.z.exe` (sin instalación, solo ejecútalo) o el instalador `Wickline-for-Windows-Setup-x.y.z.exe` (se actualiza solo) |
 | **Mac con chip de Apple** (M1, M2, M3, M4 y posteriores) | `Wickline-for-Mac-Apple-Silicon-x.y.z.dmg` |
 | Mac con procesador Intel (Mac más antiguos) | `Wickline-Intel-Mac-x.y.z.dmg` |
-| Linux | `Wickline-Linux-x.y.z.AppImage` (cualquier distribución) o `Wickline-Linux-x.y.z.deb` (Debian, Ubuntu) |
+| Linux | `Wickline-Linux-x.y.z.AppImage` (cualquier distribución, se actualiza solo) o `Wickline-Linux-x.y.z.deb` (Debian, Ubuntu) |
+
+**Actualizaciones:** el instalador de Windows y el AppImage de Linux descargan las versiones nuevas por sí solos y las instalan al reiniciar. La versión portable, el .deb y la app de Mac muestran un aviso con el enlace de descarga.
 
 ¿No sabes qué Mac tienes? Menú Apple → “Acerca de este Mac” (“Acerca de esta Mac” en Latinoamérica): si pone “Chip: Apple M…”, es un chip de Apple; si pone “Procesador: … Intel”, es Intel.
 
@@ -37,13 +40,15 @@ La app no está firmada digitalmente (los certificados de firma de código son d
 
 ## Fuentes de datos
 
-Las acciones, ETF, índices, divisas y futuros vienen de Yahoo (incluidas las bolsas de EE. UU., España, México y Brasil), las criptomonedas de Binance, Binance Futures y Coinbase, y las opciones de Bitcoin y Ether de Deribit. Los datos llegan por tu propia conexión a internet, sin pasar por servidores de terceros.
+Las acciones, ETF, índices, divisas y futuros vienen de Yahoo (incluidas las bolsas de EE. UU., España, México y Brasil), las criptomonedas de Binance, Binance Futures, Coinbase, Bybit y OKX, y las opciones de Bitcoin y Ether de Deribit. Los datos llegan por tu propia conexión a internet, sin pasar por servidores de terceros.
+
+**Historial descargado:** al desplazarte hacia atrás o repetir barras, la app descarga el historial más antiguo y lo guarda en tu equipo: criptomonedas desde 2017 (del archivo público de Binance) y acciones de EE. UU. desde 2016 con tu propia clave gratuita de [Alpaca](https://alpaca.markets) (⚙ → Fuentes de datos → Alpaca; la clave solo se guarda en tu equipo y solo se envía a Alpaca). Las descargas pequeñas se hacen solas; las grandes preguntan antes. Más detalles, en inglés: [Downloaded history](README.md#downloaded-history).
 
 Si Yahoo, Binance o GitHub están bloqueados donde estás, en la app de escritorio ve a ⚙ (Fuentes de datos) → **Proxy de red** y usa el proxy del sistema o un proxy HTTP / SOCKS5 (por ejemplo, el de Clash en `127.0.0.1:7890`). Más detalles, en inglés: [Using a proxy](README.md#using-a-proxy).
 
 ## Idioma de la interfaz
 
-La interfaz está en español, English, 简体中文, 繁體中文, 日本語, 한국어 y Português (Brasil), y por defecto sigue el idioma del sistema. Para cambiarlo, haz clic en ⚙ (Fuentes de datos), arriba a la derecha → **Idioma (Language)**, elige uno y pulsa **Guardar**.
+La interfaz está en español, English, 简体中文, 繁體中文, 日本語, 한국어, Português (Brasil), Italiano, Deutsch y Français, y por defecto sigue el idioma del sistema. Para cambiarlo, haz clic en ⚙ (Fuentes de datos), arriba a la derecha → **Idioma (Language)**, elige uno y pulsa **Guardar**.
 
 ## Comentarios
 

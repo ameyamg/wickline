@@ -9,7 +9,8 @@
 - 그리기 도구, 가격 알림, 한 화면에 차트 1~8개.
 - 커뮤니티 스크립트: 내 스크립트를 공개하고, 다른 사람의 스크립트를 클릭 한 번으로 추가.
 - 스크리너, 히트맵 (한국을 포함한 18개 주식 시장과 암호화폐), 뉴스와 경제 캘린더, 바 리플레이, 모의투자.
-- 회원가입, API 키, 구독료가 모두 필요 없습니다.
+- 긴 과거 데이터: 암호화폐 1분봉은 2017년까지, 미국 주식은 무료 Alpaca 키(선택)로 2016년까지 볼 수 있습니다. 데이터는 컴퓨터에 저장되고, 바 리플레이도 몇 년 전부터 시작할 수 있습니다.
+- 회원가입과 구독료가 필요 없고, API 키도 필요 없습니다 (Alpaca 키는 선택).
 
 **[데스크톱 앱 다운로드](../../releases/latest)** (Windows, macOS, Linux). 설치하면 바로 쓸 수 있습니다.
 
@@ -21,10 +22,12 @@
 
 | 컴퓨터 | 파일 |
 | --- | --- |
-| **Windows** | `Wickline-for-Windows-Portable-x.y.z.exe` (설치 없이 바로 실행) 또는 설치 파일 `Wickline-for-Windows-Setup-x.y.z.exe` |
+| **Windows** | `Wickline-for-Windows-Portable-x.y.z.exe` (설치 없이 바로 실행) 또는 설치 파일 `Wickline-for-Windows-Setup-x.y.z.exe` (자동 업데이트) |
 | **Apple 실리콘 Mac** (M1, M2, M3, M4 이후) | `Wickline-for-Mac-Apple-Silicon-x.y.z.dmg` |
 | Intel 프로세서 Mac (구형 Mac) | `Wickline-Intel-Mac-x.y.z.dmg` |
-| Linux | `Wickline-Linux-x.y.z.AppImage` (모든 배포판) 또는 `Wickline-Linux-x.y.z.deb` (Debian, Ubuntu) |
+| Linux | `Wickline-Linux-x.y.z.AppImage` (모든 배포판, 자동 업데이트) 또는 `Wickline-Linux-x.y.z.deb` (Debian, Ubuntu) |
+
+**업데이트:** Windows 설치 버전과 Linux AppImage는 새 버전을 알아서 내려받고 다시 시작할 때 설치합니다. 포터블 버전, .deb, Mac 앱은 다운로드 링크가 있는 알림을 표시합니다.
 
 어떤 Mac인지 모르겠다면: Apple 메뉴 → "이 Mac에 관하여"에서 "칩: Apple M…"이면 Apple 실리콘, "프로세서: … Intel"이면 Intel입니다.
 
@@ -37,13 +40,15 @@
 
 ## 데이터 출처
 
-주식·ETF·지수·외환·선물은 Yahoo (한국 주식, 미국 주식, 일본 주식, 홍콩 주식 등), 암호화폐는 Binance, Binance 선물, Coinbase, 암호화폐 히트맵의 시가총액은 CoinGecko, 비트코인과 이더리움 옵션은 Deribit에서 가져옵니다. 데이터는 사용자의 인터넷 연결로 직접 가져오며 중계 서버를 거치지 않습니다.
+주식·ETF·지수·외환·선물은 Yahoo (한국 주식, 미국 주식, 일본 주식, 홍콩 주식 등), 암호화폐는 Binance, Binance 선물, Coinbase, Bybit, OKX, 암호화폐 히트맵의 시가총액은 CoinGecko, 비트코인과 이더리움 옵션은 Deribit에서 가져옵니다. 데이터는 사용자의 인터넷 연결로 직접 가져오며 중계 서버를 거치지 않습니다.
+
+**과거 데이터 내려받기:** 차트를 과거로 스크롤하거나 바 리플레이를 쓰면 오래된 데이터를 내려받아 컴퓨터에 저장합니다. 암호화폐는 2017년부터 (Binance 공개 아카이브), 미국 주식은 본인의 무료 [Alpaca](https://alpaca.markets) 키로 2016년부터 (⚙ → 데이터 소스 → Alpaca, 키는 이 컴퓨터에만 저장되고 Alpaca에만 전송됩니다). 작은 다운로드는 자동으로, 큰 다운로드는 먼저 묻습니다. 자세한 내용(영어): [Downloaded history](README.md#downloaded-history).
 
 Yahoo, Binance, GitHub에 직접 연결되지 않는 환경에서는 데스크톱 앱의 ⚙ (데이터 소스) → **네트워크 프록시**에서 시스템 프록시 또는 HTTP / SOCKS5 프록시 (예: Clash의 `127.0.0.1:7890`)를 설정할 수 있습니다. 자세한 내용은 영어 문서의 [Using a proxy](README.md#using-a-proxy)를 참고하세요.
 
 ## 표시 언어
 
-한국어, English, 简体中文, 繁體中文, 日本語, Español, Português (Brasil)를 지원하며, 기본값은 시스템 언어를 따릅니다. 언어를 바꾸려면 오른쪽 위의 ⚙ (데이터 소스) → **언어 (Language)** → 원하는 언어 선택 → **저장**을 누르세요.
+한국어, English, 简体中文, 繁體中文, 日本語, Español, Português (Brasil), Italiano, Deutsch, Français를 지원하며, 기본값은 시스템 언어를 따릅니다. 언어를 바꾸려면 오른쪽 위의 ⚙ (데이터 소스) → **언어 (Language)** → 원하는 언어 선택 → **저장**을 누르세요.
 
 ## 피드백
 

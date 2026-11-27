@@ -25,7 +25,7 @@ A free, open-source charting platform.
   - Every pair on Binance (3,000+), Binance Futures (800+), Coinbase (500+), Bybit and OKX (spot and perpetuals, 500 to 1,200 each).
 - **Curated lists:** 283 hand-picked instruments in 12 groups (world indices, European and Asian stocks, forex, commodities, futures, bond yields…).
 - **Live screeners:** top gainers, losers, most active, trending, and more.
-- **Symbol search:** one box searches every source at once (stocks, funds, indices, forex, futures and every crypto exchange). Each result shows its exchange and where its data comes from (Yahoo, Binance, Binance Futures, Coinbase, Bybit, OKX).
+- **Symbol search:** one box searches every source at once (stocks, funds, indices, forex, futures and every crypto exchange). Each result shows its exchange and where its data comes from (Yahoo, Binance, Binance Futures, Coinbase, Bybit, OKX). Forex-style metal codes work too: XAUUSD and XAGUSD find gold and silver futures.
 - **Network proxy** for places where Yahoo, Binance or GitHub are blocked: the desktop app uses your system proxy, or an HTTP or SOCKS5 proxy you set (Clash, v2rayN…). Every data source, news and the update check go through it, and a change applies at once. See [Using a proxy](#using-a-proxy).
 
 **Screener: find stocks to trade**
@@ -273,6 +273,7 @@ This applies only if you host `public/` as a static website. A web page can't re
 | Community scripts | Browse only (they run in the desktop app) | ✅ |
 | News, economic calendar and earnings | — | ✅ |
 | Futures and most world indices | — | ✅ |
+| Downloaded history (crypto back to 2017, US stocks back to 2016 with an Alpaca key) | — | ✅ |
 
 **Visitors who want stock history there** add a free key:
 1. Click the ⚙ (Data sources) in the header, or the button on any stock chart.
@@ -464,6 +465,7 @@ Web app (public/, plain static files), in the window or any browser:
 | File | What it does |
 | --- | --- |
 | `desktop/main.mjs` | The desktop app: starts the server on `127.0.0.1`, opens the window, remembers its size, opens pop-out charts as app windows. |
+| `desktop/updater.mjs` | Updates that install themselves (the Windows installer, the Linux AppImage), through electron-updater: the page asks for a newer version, the download is checked against the release's SHA-512, and it installs on restart. |
 | `desktop/proxy.mjs`, `lib/proxy.mjs` | The network proxy setting: saved by the app, applied to the window (Electron's session) and to the server's requests and Yahoo stream (undici), without a restart. `desktop/preload.cjs` lets the settings dialog read and change it. |
 | `build/icon.png`, `.github/workflows/release.yml` | App icon, and the workflow that builds Windows/macOS/Linux installers for each tagged release. |
 | `public/` | **The web app.** Static files only, no build step. |
@@ -483,6 +485,10 @@ Web app (public/, plain static files), in the window or any browser:
 | `lib/community.mjs`, `scripts/community.mjs`, `.github/workflows/community.yml` | Publishing: reads the GitHub issue form, checks and test-runs a script in a container with no network, adds it to `community/`, removes it, and counts likes. |
 | `public/js/backtest.js`, `strategy-tester.js` | The bar-by-bar backtest engine and the Strategy Tester panel. |
 | `test/` | `npm test`: offline unit tests (backtest engine, strategy API and templates, all 100 indicators, bad-print filter, data decoding, screener, news ranking, calendar and markets outside the US, paper trading, heatmap layout and markets, option chains and Greeks, chart layouts, the script sandbox and result checks, community publishing, server). `npm run test:e2e`: drives the real desktop app with live data (needs internet). |
+| `lib/history.mjs`, `history-store.mjs`, `history-sources.mjs` | Downloaded history: what downloads by itself and what asks first, background downloads, the size limit (`history.mjs`); monthly files on disk (`history-store.mjs`); Binance's archive and Alpaca (`history-sources.mjs`). The server's `/api/history/*` answers only the app's own page. |
+| `public/js/history.js`, `history-ui.js` | The page side of downloaded history: older bars for charts, the downloads indicator and the settings. |
+| `lib/tz.mjs`, `lib/clean-bars.mjs`, `lib/search-aliases.mjs` | Each bar at its own day's exchange offset (daylight saving); cleaning Yahoo's bars (bad prints, forex closes and one-price minutes, stale histories); extra search answers (XAUUSD → gold futures). |
+| `public/js/point-editor.js`, `favorite-tools.js` | A drawing's exact prices, dates and label; favorite drawing tools and their floating bar. |
 | `public/js/drawings.js`, `primitives.js` | Drawing tools, shaded bands and the countdown, drawn through the chart library's plugin API. |
 | `public/js/markets.js`, `market-browser.js`, `quote-list.js`, `watchlist.js`, `alerts.js`, `search.js` | Markets catalog, the fast-scrolling markets list, the watchlist (its order and sections), alerts, symbol search. |
 | `public/js/screener.js`, `heatmap.js`, `news.js` | The Screener, Heatmap (a squarified treemap) and News panels. |

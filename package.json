@@ -1,6 +1,6 @@
 {
   "name": "wickline",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "Free, open-source charting platform: desktop app or static site. Live crypto, stocks, forex, 100 indicators, your own JavaScript indicators and strategies with backtesting and a community library, drawing tools, alerts and option chains.",
   "license": "MIT",
   "type": "module",

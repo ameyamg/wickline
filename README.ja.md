@@ -9,7 +9,8 @@
 - 描画ツール、価格アラート、1 画面に 1〜8 枚のチャート。
 - コミュニティスクリプト：自作スクリプトを公開し、他の人のスクリプトをワンクリックで追加。
 - スクリーナー、ヒートマップ（日本を含む 18 の株式市場と暗号資産）、ニュースと経済指標カレンダー、バーリプレイ、ペーパートレード。
-- アカウント登録、API キー、月額料金はすべて不要です。
+- 長い過去データ：暗号資産の 1 分足は 2017 年まで、米国株は無料の Alpaca キー（任意）で 2016 年までさかのぼれます。データはパソコンに保存され、バーリプレイも何年も前から始められます。
+- アカウント登録と月額料金は不要。API キーも不要です（Alpaca のキーは任意）。
 
 **[デスクトップ版をダウンロード](../../releases/latest)**（Windows、macOS、Linux）。インストールしてすぐ使えます。
 
@@ -21,10 +22,12 @@
 
 | パソコン | ファイル |
 | --- | --- |
-| **Windows** | `Wickline-for-Windows-Portable-x.y.z.exe`（インストール不要、そのまま実行）、またはインストーラー `Wickline-for-Windows-Setup-x.y.z.exe` |
+| **Windows** | `Wickline-for-Windows-Portable-x.y.z.exe`（インストール不要、そのまま実行）、またはインストーラー `Wickline-for-Windows-Setup-x.y.z.exe`（自動で更新） |
 | **Apple シリコン搭載の Mac**（M1、M2、M3、M4 以降） | `Wickline-for-Mac-Apple-Silicon-x.y.z.dmg` |
 | Intel プロセッサ搭載の Mac（古い Mac） | `Wickline-Intel-Mac-x.y.z.dmg` |
-| Linux | `Wickline-Linux-x.y.z.AppImage`（全ディストリビューション）または `Wickline-Linux-x.y.z.deb`（Debian、Ubuntu） |
+| Linux | `Wickline-Linux-x.y.z.AppImage`（全ディストリビューション、自動で更新）または `Wickline-Linux-x.y.z.deb`（Debian、Ubuntu） |
+
+**アップデート：** Windows のインストーラー版と Linux の AppImage は、新しいバージョンを自動でダウンロードし、再起動時にインストールします。ポータブル版、.deb、Mac 版は、ダウンロードリンク付きのお知らせを表示します。
 
 どちらの Mac かわからない場合：Apple メニュー →「この Mac について」で「チップ: Apple M…」なら Apple シリコン、「プロセッサ: … Intel」なら Intel です。
 
@@ -37,13 +40,15 @@
 
 ## データの取得元
 
-株式・ETF・指数・FX・先物は Yahoo（日本株、米国株、香港株など）、暗号資産は Binance、Binance 先物、Coinbase から、ビットコインとイーサリアムのオプションは Deribit から取得します。データはお使いのネット接続から直接取得し、中継サーバーは経由しません。
+株式・ETF・指数・FX・先物は Yahoo（日本株、米国株、香港株など）、暗号資産は Binance、Binance 先物、Coinbase、Bybit、OKX から、ビットコインとイーサリアムのオプションは Deribit から取得します。データはお使いのネット接続から直接取得し、中継サーバーは経由しません。
+
+**過去データのダウンロード：** チャートを過去にさかのぼったりバーリプレイを使ったりすると、古いデータをダウンロードしてパソコンに保存します。暗号資産は 2017 年から（Binance の公開アーカイブ）、米国株はご自身の無料 [Alpaca](https://alpaca.markets) キーで 2016 年から（⚙ → データソース → Alpaca。キーはこのパソコンにだけ保存され、Alpaca にだけ送信されます）。小さなダウンロードは自動で、大きなものは事前に確認します。詳しくは英語版の [Downloaded history](README.md#downloaded-history) をご覧ください。
 
 Yahoo、Binance、GitHub に直接つながらない環境では、デスクトップ版の ⚙（データソース）→ **ネットワークプロキシ** で、システムのプロキシ、または HTTP / SOCKS5 プロキシ（例：Clash の `127.0.0.1:7890`）を設定できます。詳しくは英語版の [Using a proxy](README.md#using-a-proxy) をご覧ください。
 
 ## 表示言語
 
-表示は日本語・English・简体中文・繁體中文・한국어・Español・Português (Brasil) から選べます（初期設定はシステムの言語）。切り替えるには、右上の ⚙（データソース）→ **言語 (Language)** で選び、**保存** を押します。
+表示は日本語・English・简体中文・繁體中文・한국어・Español・Português (Brasil)・Italiano・Deutsch・Français から選べます（初期設定はシステムの言語）。切り替えるには、右上の ⚙（データソース）→ **言語 (Language)** で選び、**保存** を押します。
 
 ## フィードバック
 
