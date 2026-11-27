@@ -77,7 +77,9 @@ jobs:
           # The downloads, and the update files of the two builds that update themselves (desktop/updater.mjs):
           # latest.yml and the installer's .blockmap (Windows), latest-linux.yml (the AppImage). Not the Mac's.
           shopt -s nullglob
-          files=(*.exe *.dmg *.AppImage *.deb latest.yml latest-linux.yml *Setup*.exe.blockmap)
+          files=(*.exe *.dmg *.AppImage *.deb *Setup*.exe.blockmap)
+          # Plain names stay in the list even when missing (only patterns drop out): add them only if there.
+          for f in latest.yml latest-linux.yml; do if [ -f "$f" ]; then files+=("$f"); fi; done
           if [ ${#files[@]} -eq 0 ]; then echo "No build files found"; exit 1; fi
           ls -l "${files[@]}"
           gh release upload "v$V" "${files[@]}" --clobber --repo "$GITHUB_REPOSITORY"
