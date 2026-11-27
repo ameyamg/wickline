@@ -277,6 +277,21 @@ app.whenReady().then(async () => {
     const b45 = await tfBars(2700);
     check('...Enter switches the active chart to 45m', b45.tf === '45m' && b45.common === 2700 && b45.offGrid === 0 && (await run(`document.querySelector('.ivl-box').hidden`)), JSON.stringify(b45));
     check('...and the header shows it as active', await run(`!!document.querySelector('#tf-group .tf.on[data-tf="45m"]')`));
+    // Issues #15 and #22, with real key presses (the window's Edit menu has its own Ctrl+Z): Ctrl+D duplicates,
+    // Ctrl+Z undoes, Ctrl+Y and Ctrl+Shift+Z redo.
+    const combo = async (k, ...mods) => { for (const type of ['keyDown', 'keyUp']) win.webContents.sendInputEvent({ type, keyCode: k, modifiers: ['control', ...mods] }); await wait(150); };
+    const activeView = `(() => { const vs = window.__wickline.views(); return vs.find((x) => x.el.classList.contains('active')) || vs[0]; })()`;
+    const drawCount = () => run(`${activeView}.drawings.items.length`);
+    await run(`(() => { document.activeElement?.blur(); const v = ${activeView}; v.drawings.clearAll();
+      const box = v.chart.timeScale().width(); v.drawings.setTool('hline'); v.drawings.handleClick({ point: { x: box / 2, y: 120 } }); })()`);
+    const undoKeys = [await drawCount()];
+    await combo('D'); undoKeys.push(await drawCount());
+    await combo('Z'); undoKeys.push(await drawCount());
+    await combo('Z'); undoKeys.push(await drawCount());
+    await combo('Y'); undoKeys.push(await drawCount());
+    await combo('Z', 'shift'); undoKeys.push(await drawCount());
+    check('Ctrl+D duplicates a drawing; Ctrl+Z undoes, Ctrl+Y and Ctrl+Shift+Z redo (real keys)', undoKeys.join() === '1,2,1,0,1,2', undoKeys.join());
+    await run(`${activeView}.drawings.clearAll()`);
     key('7');
     await wait(200);
     await run(`(() => { const i = document.querySelector('.ivl-input'); i.value = '7203.T'; i.dispatchEvent(new Event('input')); })()`);

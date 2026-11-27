@@ -144,7 +144,8 @@ A free, open-source charting platform.
   - **Shapes & text:** rectangle, parallel channel, text.
   - **Arrow symbols:** up and down arrows with an optional label (a count, a note…) and an adjustable size; the label and the arrow scale together.
   - **Analysis:** Fibonacci retracement, measure, long position, short position (click the entry, then the target; or click twice in one spot for a ready-made one).
-- **Editing:** drag drawings and their handles. Change colors from the drawing's toolbar, and hide the labels of a position or anchored VWAP there too.
+- **Editing:** drag drawings and their handles. Change colors from the drawing's toolbar, and hide the labels of a position or anchored VWAP there too. Duplicate a drawing (`Ctrl+D`), or lock it so it can't be dragged by accident (it can still be edited and deleted).
+- **Undo / redo:** `Ctrl+Z` takes back the last change to a chart's drawings (placing, moving, resizing, restyling, deleting, clearing all), `Ctrl+Y` or `Ctrl+Shift+Z` puts it back. Each chart keeps the last 100 steps per symbol while the app is open.
 - **Favorite drawing tools:** star a tool in its menu to add it to a floating bar, in the order you star them. Click an icon to draw, or drag the grip to move the bar within the chart area. A long bar scrolls horizontally (the mouse wheel works too). Favorites and the bar's position are saved and shared with pop-out windows; unstar the last tool to hide the bar.
 - **Exact values:** double-click a drawing (or press the pencil in its toolbar) to type the price and date of each of its points, the entry, target and stop of a position, and a label for a line, level or rectangle, placed at its left, middle or right.
 - **Magnet:** the magnet button in the drawing toolbar cycles **off → weak → strong**. Weak snaps a point you place or drag to the bar's open, high, low or close when the pointer is close to it; strong always snaps to the nearest of the four. A ring shows where it is snapping.
@@ -302,6 +303,7 @@ A static site can also skip the key by pointing at someone's running server unde
 | `Esc` | Cancel drawing / choosing a replay start / close dialog |
 | `Delete` / `Backspace` | Delete the selected drawing |
 | `Ctrl+D` | Duplicate the selected drawing (the copy is selected, ready to drag) |
+| `Ctrl+Z` · `Ctrl+Y` / `Ctrl+Shift+Z` | Undo · redo the last change to the drawings |
 | `Ctrl+S` · `Ctrl+Enter` | In the script editor: save · add to chart |
 
 **Using the toolbar:**

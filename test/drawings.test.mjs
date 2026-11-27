@@ -426,6 +426,149 @@ ok('a locked drawing is selected but not dragged; unlocked, it moves again (#15)
   assert.equal(l.items.length, 0);
 });
 
+ok('undo / redo (#22): placing, moving, restyling, deleting and clearing are each one step', () => {
+  const l = makeLayer();
+  const pts = (d) => [d.p1.time, d.p1.price, d.p2.time, d.p2.price];
+  const d = place(l, 'trend', { x: 100, y: 300 }, { x: 300, y: 200 });
+  const placed = pts(d);
+  l.setTool('cursor');
+  assert.ok(l.beginDrag(200, 250));
+  l.dragMove(250, 250);
+  l.dragMove(300, 250);
+  l.endDrag(); // one drag, however many moves
+  const moved = pts(l.selected);
+  assert.notDeepEqual(moved, placed);
+  l.updateSelected({ color: '#FF0000' });
+  l.deleteSelected();
+  place(l, 'hline', { x: 100, y: 500 }, { x: 100, y: 500 });
+  l.setTool('cursor');
+  l.clearAll();
+  assert.equal(l.items.length, 0);
+  assert.ok(l.undo()); assert.deepEqual(l.items.map((x) => x.type), ['hline'], 'clear all is undone');
+  assert.ok(l.undo()); assert.equal(l.items.length, 0, 'the hline is gone again');
+  assert.ok(l.undo()); assert.equal(l.items[0].color, '#FF0000', 'the deleted line is back, red');
+  assert.ok(l.undo()); assert.notEqual(l.items[0].color, '#FF0000', 'its color is back');
+  assert.deepEqual(pts(l.items[0]), moved);
+  assert.ok(l.undo()); assert.deepEqual(pts(l.items[0]), placed, 'the drag is undone in one step');
+  assert.ok(l.undo()); assert.equal(l.items.length, 0, 'the line was never placed');
+  assert.equal(l.undo(), false, 'nothing more to undo');
+  assert.ok(l.redo()); assert.ok(l.redo());
+  assert.deepEqual(pts(l.items[0]), moved, 'redo puts the drag back');
+  l.updateSelected({ width: 3 }); // nothing selected: no change, redo stays
+  l.select(l.items[0].id);
+  l.updateSelected({ width: 3 });
+  assert.equal(l.redo(), false, 'a new change drops what could be redone');
+  assert.ok(l.undo()); assert.equal(l.items[0].width, undefined);
+});
+
+ok('undo / redo: a burst of typing is one step, a click without moving is none, the selection stays', () => {
+  const l = makeLayer();
+  const selections = [];
+  l.onSelect = (d) => selections.push(d?.text ?? null);
+  l.setTool('text');
+  l.handleClick({ point: { x: 300, y: 500 } });
+  const d = l.items[0];
+  for (const text of ['a', 'ab', 'abc']) l.updateSelected({ text });
+  l.updateSelected({ color: '#FF0000' }); // another field: its own step
+  l.setTool('cursor');
+  l.select(d.id);
+  assert.ok(l.beginDrag(300, 500));
+  l.endDrag(); // a click: nothing moved
+  selections.length = 0;
+  assert.ok(l.undo());
+  assert.equal(l.items[0].text, 'abc');
+  assert.notEqual(l.items[0].color, '#FF0000', 'the click added no step: undo took back the color');
+  assert.equal(l.selected?.id, d.id, 'the drawing stays selected');
+  assert.deepEqual(selections, ['abc'], 'and its toolbar is refreshed');
+  assert.ok(l.undo());
+  assert.equal(l.items[0].text, TOOLS.text.label, 'the three keystrokes are one step');
+  // An edit undone by hand within the burst (lock, unlock) leaves nothing to undo.
+  const l2 = makeLayer();
+  place(l2, 'trend', { x: 100, y: 300 }, { x: 300, y: 200 });
+  l2.toggleLockSelected();
+  l2.toggleLockSelected();
+  assert.ok(l2.undo());
+  assert.equal(l2.items.length, 0, 'the next undo takes back the placing, not an empty step');
+  // ...and the same field later on is a step of its own.
+  const realNow = Date.now;
+  try {
+    let now = 1e12;
+    Date.now = () => now;
+    const l3 = makeLayer();
+    l3.setTool('text');
+    l3.handleClick({ point: { x: 300, y: 500 } });
+    l3.updateSelected({ text: 'one' });
+    now += 5000;
+    l3.updateSelected({ text: 'two' });
+    assert.ok(l3.undo());
+    assert.equal(l3.items[0].text, 'one');
+  } finally { Date.now = realNow; }
+});
+
+ok('undo / redo: while placing, undo drops the drawing in progress; Duplicate and Lock undo too', () => {
+  const l = makeLayer();
+  place(l, 'trend', { x: 100, y: 300 }, { x: 300, y: 200 });
+  l.setTool('trend');
+  l.handleClick({ point: { x: 100, y: 100 } }); // first point of a second line
+  assert.ok(l.pending);
+  assert.equal(l.redo(), false, 'no redo while placing');
+  assert.ok(l.undo());
+  assert.equal(l.pending, null);
+  assert.equal(l.items.length, 1, 'the placed line stays');
+  l.setTool('cursor');
+  l.select(l.items[0].id);
+  l.duplicateSelected();
+  l.toggleLockSelected();
+  assert.equal(l.selected.locked, true);
+  assert.ok(l.undo()); assert.equal(l.items[1].locked, undefined, 'the lock is undone');
+  assert.ok(l.undo()); assert.equal(l.items.length, 1, 'the copy is undone');
+  assert.equal(l.selected, null, 'the copy was selected: now nothing is');
+  // Mid-drag, undo waits.
+  l.select(l.items[0].id);
+  assert.ok(l.beginDrag(200, 250));
+  assert.equal(l.undo(), false);
+  l.endDrag();
+});
+
+ok('undo / redo: each symbol keeps its own history; the renderer\'s cached fields are no step', () => {
+  const mem = new Map();
+  globalThis.localStorage = { getItem: (k) => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, String(v)) };
+  try {
+    const l = makeLayer();
+    place(l, 'trend', { x: 100, y: 300 }, { x: 300, y: 200 });
+    l.setContext('OTHER', 1000);
+    assert.equal(l.undo(), false, 'nothing drawn on OTHER');
+    place(l, 'hline', { x: 100, y: 500 }, { x: 100, y: 500 });
+    l.setContext('TEST', 1000);
+    assert.equal(l.items.length, 1);
+    l.items[0]._w = 42; // what drawing a label caches
+    l.select(l.items[0].id);
+    l.updateSelected({});
+    assert.ok(!mem.get('wickline.drawings.TEST').includes('_w'), 'saved without cached fields');
+    assert.ok(l.undo(), 'back on TEST, its history is still there (and the cached field made no step)');
+    assert.equal(l.items.length, 0);
+    assert.equal(JSON.parse(mem.get('wickline.drawings.TEST')).length, 0, 'and the undo is saved');
+    // Another chart changed TEST's drawings meanwhile: this chart's history for it no longer applies.
+    const other = makeLayer();
+    other.setContext('TEST', 1000);
+    place(other, 'hline', { x: 100, y: 500 }, { x: 100, y: 500 });
+    l.setContext('OTHER', 1000);
+    l.setContext('TEST', 1000);
+    assert.equal(l.redo(), false);
+    assert.equal(l.undo(), false);
+    assert.equal(l.items.length, 1, 'the other chart\'s line is untouched');
+  } finally { delete globalThis.localStorage; }
+});
+
+ok('undo / redo: the history keeps the last 100 steps', () => {
+  const l = makeLayer();
+  for (let i = 0; i < 105; i++) place(l, 'hline', { x: 100, y: 100 + i }, { x: 100, y: 100 + i });
+  let steps = 0;
+  while (l.undo()) steps++;
+  assert.equal(steps, 100);
+  assert.equal(l.items.length, 5);
+});
+
 ok('the tools are registered', () => {
   assert.equal(TOOLS.arrowUp.points, 1);
   assert.equal(TOOLS.arrowDown.points, 1);

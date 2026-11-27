@@ -91,10 +91,16 @@ const store = {
   load(key) {
     try { return JSON.parse(localStorage.getItem(`wickline.drawings.${key}`)) || []; } catch { return []; }
   },
-  save(key, items) {
-    try { localStorage.setItem(`wickline.drawings.${key}`, JSON.stringify(items)); } catch { /* ignore */ }
+  save(key, json) {
+    try { localStorage.setItem(`wickline.drawings.${key}`, json); } catch { /* ignore */ }
   },
 };
+
+// Undo / redo (#22): each saved change is one step, kept per chart and symbol while the app is open.
+const HISTORY_MAX = 100;
+const COALESCE_MS = 1000; // edits to the same field of the same drawing this close together are one step
+/** The drawings as saved, without the `_` fields the renderer caches on them. */
+const snapshot = (items) => JSON.stringify(items, (k, v) => (k.startsWith('_') ? undefined : v));
 
 const clampSize = (v) => Math.max(SYMBOL_SIZE.min, Math.min(SYMBOL_SIZE.max, Math.round(Number(v)) || SYMBOL_SIZE.default));
 const sizeStore = {
@@ -123,6 +129,7 @@ export class DrawingLayer {
     this.chart = null;
     this.series = null;
     this.drag = null;
+    this._histories = new Map(); // symbol → { undo, redo, last, mark, at }: see _changed
     const saved = settings.get('magnet', 'off');
     this.magnet = MAGNET_MODES.includes(saved) ? saved : 'off';
     this.symbolSize = sizeStore.load();
@@ -168,6 +175,9 @@ export class DrawingLayer {
     this.tfSec = tfSec;
     this.items = store.load(symbolKey).filter((d) => TOOLS[d.type]);
     this.pending = null;
+    // Back on a symbol: its history still applies unless its drawings changed meanwhile (another chart).
+    const h = this._history(), now = snapshot(this.items);
+    if (h.last !== now) Object.assign(h, { undo: [], redo: [], last: now, mark: null });
     this.select(null);
     this._changed(false);
   }
@@ -200,7 +210,7 @@ export class DrawingLayer {
       sizeStore.save(patch.size);
     }
     Object.assign(d, patch);
-    this._changed(true);
+    this._changed(true, `${d.id}:${Object.keys(patch).sort()}`);
     this.onSelect?.(d);
   }
 
@@ -286,8 +296,64 @@ export class DrawingLayer {
     this._changed(true);
   }
 
-  _changed(save) {
-    if (save && this.key) store.save(this.key, this.items);
+  /** Takes back the last change to this chart's drawings (Ctrl+Z). A drawing being placed is dropped first. */
+  undo() {
+    if (this.drag) return false;
+    if (this.pending) return this.cancel();
+    return this._travel('undo', 'redo');
+  }
+
+  /** Puts back what undo took back (Ctrl+Y, Ctrl+Shift+Z). */
+  redo() {
+    if (this.drag || this.pending) return false;
+    return this._travel('redo', 'undo');
+  }
+
+  _history() {
+    let h = this._histories.get(this.key);
+    if (!h) this._histories.set(this.key, (h = { undo: [], redo: [], last: null, mark: null, at: 0 }));
+    return h;
+  }
+
+  _travel(from, to) {
+    if (!this.key) return false;
+    const h = this._history();
+    if (!h[from].length) return false;
+    h[to].push(h.last);
+    h.last = h[from].pop();
+    h.mark = null;
+    this.items = JSON.parse(h.last).filter((d) => TOOLS[d.type]);
+    store.save(this.key, h.last);
+    // Keep the selection if that drawing is still there, and refresh its toolbar (its look may be back to before).
+    const keep = this.items.some((d) => d.id === this.selectedId) ? this.selectedId : null;
+    this.selectedId = undefined;
+    this.select(keep);
+    this._changed(false);
+    return true;
+  }
+
+  /**
+   * Redraws after a change; `save` stores it and makes it an undo step. `mark` names an edit (a drawing's
+   * field): a burst of the same edit (typing a label, dragging a slider) is one step.
+   */
+  _changed(save, mark = null) {
+    if (save && this.key) {
+      const h = this._history(), now = snapshot(this.items);
+      if (h.last != null && now !== h.last) {
+        if (!(mark && mark === h.mark && Date.now() - h.at < COALESCE_MS)) {
+          h.undo.push(h.last);
+          if (h.undo.length > HISTORY_MAX) h.undo.shift();
+        } else if (h.undo.at(-1) === now) { // the burst ended where it started: nothing to undo
+          h.undo.pop();
+          mark = null;
+        }
+        h.redo = [];
+        h.mark = mark;
+        h.at = Date.now();
+      }
+      h.last = now;
+      store.save(this.key, now);
+    }
     this._axisViews = this.items.filter((d) => d.type === 'hline' || d.type === 'hray').map((d) => ({
       coordinate: () => this.series?.priceToCoordinate(d.p1.price) ?? -1000,
       text: () => this.formatPrice(d.p1.price),

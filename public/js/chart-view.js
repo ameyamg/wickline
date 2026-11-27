@@ -1142,6 +1142,8 @@ export class ChartView {
   cancelDrawing() { return this.drawings.cancel(); }
   deleteSelectedDrawing() { return this.drawings.deleteSelected(); }
   duplicateSelectedDrawing() { return this.drawings.duplicateSelected(); }
+  undoDrawing() { return this.drawings.undo(); }
+  redoDrawing() { return this.drawings.redo(); }
   clearDrawings() { this.drawings.clearAll(); }
 
   setActive(on) { this.el.classList.toggle('active', on); }
