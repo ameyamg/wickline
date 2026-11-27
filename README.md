@@ -250,7 +250,7 @@ A chart first loads a recent stretch, and you can scroll or replay further back.
 
 - **Crypto** (Binance and Binance Futures, charts under an hour): minute bars back to 2017 from Binance's public archive, each file checked against its published checksum. Hourly and longer charts page back through the exchange as before.
 - **US stocks and ETFs, with a free [Alpaca](https://alpaca.markets) key:** 1-minute bars back to 2016. Add the key under ⚙ (Data sources) → **Alpaca**. It's kept on your computer and sent only to Alpaca.
-- **Without a key:** Yahoo's intraday history is short (1-minute bars for about 30 days, 5- to 30-minute for 60 days, hourly for about two years). Wickline fetches all of it and keeps what it has seen, so a chart's history grows from the day you start using it.
+- **Without a key:** Yahoo's intraday history is short (1-minute bars for about 30 days, 5- to 30-minute for 60 days, hourly for about two years). Wickline fetches all of it and keeps what it has seen, so a chart's history grows from the day you start using it. Scroll back to where it ends on a US stock and a bar offers to add the free key; once it's added, the older bars load right away.
 - **Replay far back:** a replay years back plays from a window around its date and downloads more as it goes, so only the months it reaches are needed.
 - **Backtests over a date range** (Strategy Tester → Date range) download the months they need first, showing their progress.
 - **Scrolling back** loads the next bars before you reach the edge, from the download wherever it has them.

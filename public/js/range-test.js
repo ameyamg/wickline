@@ -100,6 +100,7 @@ export async function loadRangeBars(symbol, tf, from, to, { onStep = () => {}, r
     }
     return pages.flat().filter((b) => b.time >= from && b.time <= to);
   } finally {
+    run.alpacaHint = !!f.alpacaHint; // a US stock on Yahoo's short history: a free Alpaca key would give years more
     f.close?.();
   }
 }

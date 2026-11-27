@@ -188,7 +188,7 @@ function createView(state) {
       trading.onViewChange(x);
     },
     onStrategy: (x, entry) => tester.onResult(x, entry),
-    onNotice: (x, msg) => { if (x === activeView) toast(msg); },
+    onAlpacaKey: () => openAlpacaKey(),
     onStatus: (x) => { if (x === activeView) syncStatus(); },
     onUpdate: (x) => { if (x === activeView) syncTitle(); trading.onChartUpdate(x); },
     onReplay: (x, event, payload) => {
@@ -571,6 +571,23 @@ function syncDataMode() {
 // Language: "System default", then each language under its own name (so anyone can find theirs).
 $('#set-lang').innerHTML = `<option value="">${esc(t('app.set.langSystem'))}</option>`
   + LANGUAGES.map((l) => `<option value="${l.id}">${esc(l.name)}</option>`).join('');
+
+/** Settings, at the Alpaca key (the history section appears once the app's server has answered). */
+async function openAlpacaKey() {
+  openSettings();
+  for (let k = 0; k < 30 && $('#set-history').hidden; k++) await new Promise((r) => setTimeout(r, 100));
+  const input = $('#set-alpaca-id');
+  if ($('#set-history').hidden || !input) return;
+  input.scrollIntoView({ block: 'center' });
+  input.focus();
+}
+
+// A key added or removed (history-ui.js): stock charts whose history ran out try again, and the
+// Strategy Tester's date ranges are tested again with it.
+window.addEventListener('wickline:alpaca', () => {
+  for (const v of views) v.alpacaKeyChanged();
+  tester.resetRanges();
+});
 
 function openSettings() {
   openHistorySettings(); // downloaded history: only with the app's own server
@@ -1082,7 +1099,7 @@ const editor = new ScriptEditor({ getView: () => activeView, toast });
 $('#ed-btn').addEventListener('click', () => editor.toggle());
 
 const tester = new StrategyTester({
-  getView: () => activeView, toast,
+  getView: () => activeView, toast, alpacaKey: () => openAlpacaKey(),
   browseStrategies: () => { indCat = 'Community'; setCommunityView({ kind: 'strategy' }); openIndicators(); },
 });
 onAppearanceChange(() => tester.applyTheme());

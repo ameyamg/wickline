@@ -623,6 +623,7 @@ class YahooFeed {
     this.pendingAsk = null;
     const r = await yahooOlder(`YAHOO:${this.ticker}`, this.tf.id, null, { prepost: this.ext, from, count, forward: true });
     this.pendingAsk = r.ask;
+    this.alpacaHint = r.hint === 'alpaca'; // only Yahoo's short history: a free Alpaca key would give years more
     return { bars: r.bars, more: r.more };
   }
 
@@ -632,6 +633,7 @@ class YahooFeed {
       if (!this.history || !this.canLoadMore) return [];
       const r = await yahooOlder(`YAHOO:${this.ticker}`, this.tf.id, firstTime, { prepost: this.ext, from });
       this.pendingAsk = r.ask;
+      this.alpacaHint = r.hint === 'alpaca'; // only Yahoo's short history: a free Alpaca key would give years more
       if (!r.bars.length && !r.ask) this.canLoadMore = false;
       return r.bars.filter((b) => b.time < firstTime);
     }

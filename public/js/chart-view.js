@@ -145,6 +145,9 @@ export function cloneChartState(s, overrides = {}) {
   return { ...copy, ...overrides };
 }
 
+/** Charts ("symbol|timeframe") whose "a free Alpaca key gives years more" bar was closed: not again there until the app restarts. */
+const alpacaHintClosed = new Set();
+
 const ICON_GEAR = '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M19.4 13a7.5 7.5 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3h-4l-.3 2.9a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.5 7.5 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.4 7.4 0 0 0 1.7 1L11 21h4l.3-2.9a7.4 7.4 0 0 0 1.7-1l2.5 1 2-3.5zM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" transform="translate(-1 0)"/></svg>';
 const ICON_X = '<svg viewBox="0 0 24 24" width="14" height="14"><path stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg>';
 const ICON_CODE = '<svg viewBox="0 0 24 24" width="14" height="14"><path d="M9 7l-5 5 5 5M15 7l5 5-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -300,6 +303,11 @@ export class ChartView {
         <input class="rp-date" type="datetime-local" aria-label="${t('chart.replay.startDate')}">
         <button data-rp="date" class="tb-btn">${t('chart.replay.go')}</button>
         <button data-rp="cancel" class="tb-btn">${t('common.cancel')}</button>
+      </div>
+      <div class="hist-hint" hidden>
+        <span class="ha-text"></span>
+        <button data-hh="key" class="tb-btn ha-yes">${t('hist.alpacaAdd')}</button>
+        <button data-hh="close" class="tb-btn" title="${t('common.close')}" aria-label="${t('common.close')}">×</button>
       </div>
       <div class="hist-ask" hidden>
         <span class="ha-text"></span>
@@ -508,6 +516,7 @@ export class ChartView {
     this.chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
       this.updateToLatest(range);
       this.loadOlderAhead(range);
+      this.syncAlpacaHint(range);
     });
 
     const rpBar = this.q('.replay-bar');
@@ -527,6 +536,13 @@ export class ChartView {
     rpBar.querySelector('[data-rp="speed"]').addEventListener('change', (e) => this.setReplaySpeed(Number(e.target.value)));
     for (const el of [rpBar, banner, this.q('.qt')]) el.addEventListener('keydown', (e) => { if (e.key !== 'Escape') e.stopPropagation(); });
     this.q('.hist-ask').addEventListener('click', (e) => { const b = e.target.closest('[data-ha]'); if (b) this.answerHistory(b.dataset.ha === 'yes'); });
+    this.q('.hist-hint').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-hh]');
+      if (!b) return;
+      this.q('.hist-hint').hidden = true;
+      if (b.dataset.hh === 'key') this.hooks.onAlpacaKey?.(this);
+      else alpacaHintClosed.add(`${this.state.symbol}|${this.tf.id}`); // this chart only
+    });
     this.q('.qt').addEventListener('click', (e) => {
       const side = e.target.closest('[data-qt]')?.dataset.qt;
       if (side) this.hooks.onQuickTrade?.(this, side, Number(this.q('.qt-qty').value));
@@ -1466,6 +1482,8 @@ export class ChartView {
     this.feed = null;
     if (settings.view === this) closeSettings();
     this.q('.hist-ask').hidden = true;
+    this.q('.hist-hint').hidden = true;
+    this.historyEnd = null;
     this.histAsk = null;
     this.histDeclined = false;
     this.q('.overlay.loading').hidden = false;
@@ -1565,6 +1583,8 @@ export class ChartView {
       const first = this.bars[0].time;
       const older = (await f.loadOlder(first, { from })).filter((b) => b.time < first);
       if (gen === this.loadGen && from == null && f.pendingAsk && !this.histDeclined) this.askHistory(f.pendingAsk, { resume: () => this.loadOlder() });
+      // The short history Yahoo keeps for a US stock ran out (the bar saying so waits for its oldest bar to be on screen).
+      if (gen === this.loadGen && from == null && !older.length && f.alpacaHint) { this.historyEnd = 'alpaca'; this.syncAlpacaHint(); }
       if (gen !== this.loadGen || this.feed !== f || this.destroyed || !older.length || this.bars[0].time !== first) return 0;
       this.bars = older.concat(this.bars);
       if (this.replay) {
@@ -1598,6 +1618,33 @@ export class ChartView {
     if (!r) return;
     const ahead = this.feed.server === false ? 40 : Math.max(1000, 3 * (r.to - r.from));
     if (r.from < ahead) this.loadOlder();
+  }
+
+  /**
+   * The "a free Alpaca key gives years more" bar: once the short history Yahoo keeps for a US stock has
+   * run out, while its oldest bar is on screen (not when the next bars are only being fetched ahead),
+   * outside a replay, and unless it was closed for this chart. It goes away when scrolled clear of the start.
+   */
+  syncAlpacaHint(range = null) {
+    if (this.destroyed) return;
+    const box = this.q('.hist-hint');
+    const r = range || (this.bars.length ? this.chart.timeScale().getVisibleLogicalRange() : null);
+    const can = this.historyEnd === 'alpaca' && !this.replay && !!r && !alpacaHintClosed.has(`${this.state.symbol}|${this.tf.id}`);
+    if (box.hidden && can && r.from <= 2) {
+      box.querySelector('.ha-text').textContent = t('hist.alpacaHint', { symbol: this.ticker, tf: this.tf.id });
+      box.hidden = false;
+    } else if (!box.hidden && (!can || r.from > 40)) box.hidden = true;
+  }
+
+  /** The Alpaca key was added or removed: a stock chart whose history ran out may go further now. */
+  alpacaKeyChanged() {
+    this.historyEnd = null;
+    this.q('.hist-hint').hidden = true;
+    const f = this.feed;
+    if (!f?.history || !('server' in f)) return; // stocks only (Yahoo's feed)
+    f.canLoadMore = true;
+    f.alpacaHint = false;
+    this.loadOlderAhead();
   }
 
   /**

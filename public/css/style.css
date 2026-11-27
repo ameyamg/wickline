@@ -464,6 +464,7 @@ body.popout .hide-popout { display: none; }
 .st-bar.busy i { width: 30%; animation: st-busy 1.2s ease-in-out infinite; }
 @keyframes st-busy { from { margin-left: -30%; } to { margin-left: 100%; } }
 .st-progress .btn-ghost { align-self: center; margin-top: 8px; }
+.st-link { padding: 0; border: 0; background: none; font: inherit; color: var(--accent-text); text-decoration: underline; cursor: pointer; }
 .st-empty { margin: auto; max-width: 520px; text-align: center; display: flex; flex-direction: column; gap: 6px; padding: 20px; color: var(--muted); }
 .st-empty b { color: var(--text-strong); }
 .st-empty code { font-size: 12px; padding: 0 4px; border-radius: 4px; background: var(--panel-2); color: var(--text); }
@@ -1245,17 +1246,17 @@ select.field, .pe-field select, .pop-field select, .st-props select {
 
 /* Downloaded history (js/history.js, js/history-ui.js): the "download?" bar on a chart, the note
    while older bars load, the downloads indicator and its list, and the settings section. */
-.hist-ask {
+.hist-ask, .hist-hint {
   position: absolute; top: 48px; left: 50%; transform: translateX(-50%); z-index: 7;
   display: flex; align-items: center; gap: 6px; padding: 5px 6px 5px 12px; max-width: calc(100% - 16px);
   background: var(--panel); border: 1px solid var(--accent); border-radius: 10px; box-shadow: var(--shadow);
   font-size: 12.5px; color: var(--text-strong);
 }
-.hist-ask[hidden], .hist-loading[hidden] { display: none; }
-.hist-ask .ha-text { white-space: normal; line-height: 1.35; }
-.hist-ask .tb-btn { height: 28px; padding: 0 10px; flex: none; }
-.hist-ask .ha-yes { color: var(--accent-text); font-weight: 700; }
-.hist-ask .tb-btn:hover { background: var(--panel-2); }
+.hist-ask[hidden], .hist-hint[hidden], .hist-loading[hidden] { display: none; }
+:is(.hist-ask, .hist-hint) .ha-text { white-space: normal; line-height: 1.35; }
+:is(.hist-ask, .hist-hint) .tb-btn { height: 28px; padding: 0 10px; flex: none; }
+:is(.hist-ask, .hist-hint) .ha-yes { color: var(--accent-text); font-weight: 700; }
+:is(.hist-ask, .hist-hint) .tb-btn:hover { background: var(--panel-2); }
 .hist-loading {
   position: absolute; left: 10px; bottom: 36px; z-index: 6; pointer-events: none;
   padding: 3px 9px; border-radius: 999px; font-size: 11.5px; color: var(--muted);

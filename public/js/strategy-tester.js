@@ -42,10 +42,11 @@ function fmtTime(ts, daily) {
 }
 
 export class StrategyTester {
-  constructor({ getView, toast, browseStrategies }) {
+  constructor({ getView, toast, browseStrategies, alpacaKey }) {
     this.getView = getView;
     this.toast = toast;
     this.browseStrategies = browseStrategies;
+    this.alpacaKey = alpacaKey; // opens Settings at the Alpaca key
     this.el = $('#tester');
     this.select = $('#st-select');
     this.content = $('#st-content');
@@ -188,15 +189,23 @@ export class StrategyTester {
       if (!res.strategy) throw new Error(t('st.range.notStrategy'));
       this.range.results.set(entry.inst.id, {
         entryId: entry.inst.id, viewKey, from, to, start: bars[0].time, end: bars[bars.length - 1].time,
-        report: res.strategy, times: bars.map((b) => b.time),
+        report: res.strategy, times: bars.map((b) => b.time), alpacaHint: !!run.handle.alpacaHint,
       });
     } catch (e) {
       if (e instanceof RangeCancelled || this.range.run !== run) return;
-      this.range.errors.set(entry.inst.id, { entryId: entry.inst.id, viewKey, message: e.message });
+      this.range.errors.set(entry.inst.id, { entryId: entry.inst.id, viewKey, message: e.message, alpacaHint: !!run.handle.alpacaHint });
       this.range.results.delete(entry.inst.id);
     } finally {
       if (this.range.run === run) { this.range.run = null; this.render(); }
     }
+  }
+
+  /** The Alpaca key changed: stock bars loaded for a range may now reach further, so ranges are tested again. */
+  resetRanges() {
+    this.range.cache = null;
+    this.range.results.clear();
+    this.range.errors.clear();
+    this.render();
   }
 
   cancelRange() {
@@ -232,8 +241,9 @@ export class StrategyTester {
   rangeEmptyHtml(entry) {
     const e = this.rangeOf(this.range.errors, entry);
     const failed = !!e;
+    const hint = failed && e.alpacaHint ? `<span>${esc(t('st.range.alpacaHint'))}</span><button type="button" class="btn-primary st-browse" data-st="alpaca">${esc(t('hist.alpacaAdd'))}</button>` : '';
     return `<div class="st-empty"><b>${esc(failed ? t('st.range.failed') : t('st.range.title'))}</b>
-      ${failed ? `<span>${esc(e.message)}</span>` : ''}
+      ${failed ? `<span>${esc(e.message)}</span>` : ''}${hint}
       <span>${esc(t('st.range.howTo', { name: entry.def?.name || '', symbol: this.view?.ticker || '' }))}</span></div>`;
   }
 
@@ -361,7 +371,9 @@ export class StrategyTester {
       // A range test says what it covered, and when the data started later than asked.
       const rg = entry.range;
       const daily = this.view?.tf.daily;
-      const span = rg ? `${esc(t('st.range.span', { from: fmtTime(rg.start, true), to: fmtTime(rg.end, true) }))}${rg.start > rg.from + 5 * 86400 ? ` (${esc(t('st.range.dataFrom', { date: fmtTime(rg.start, daily) }))})` : ''} · ` : '';
+      const late = rg && rg.start > rg.from + 5 * 86400; // the data starts later than asked
+      const alpaca = late && rg.alpacaHint ? ` <button type="button" class="st-link" data-st="alpaca" title="${esc(t('st.range.alpacaHint'))}">${esc(t('hist.alpacaAdd'))}</button>` : '';
+      const span = rg ? `${esc(t('st.range.span', { from: fmtTime(rg.start, true), to: fmtTime(rg.end, true) }))}${late ? ` (${esc(t('st.range.dataFrom', { date: fmtTime(rg.start, daily) }))})${alpaca}` : ''} · ` : '';
       this.content.innerHTML = `${kpis}<div class="st-chart-wrap"><div class="st-legend">
         <span><i style="background:#4FA3F7"></i>${esc(t('st.equity'))}</span><span><i style="background:#8E8A82"></i>${esc(t('st.buyHold'))}</span><span><i style="background:#EC5246"></i>${esc(t('st.drawdown'))}</span>
         <span class="muted">${span}${esc(t('st.bars', { n: r.equity.length.toLocaleString(locale) }))} · ${esc(this.describeProps(r.props))}</span></div><div class="st-chart"></div></div>`;
@@ -584,6 +596,7 @@ export class StrategyTester {
     if (act === 'browse') { this.browseStrategies?.(); return; }
     if (act === 'csv') { this.exportCsv(); return; }
     if (act === 'cancel') { this.cancelRange(); return; }
+    if (act === 'alpaca') { this.alpacaKey?.(); return; }
     if (act === 'reset') {
       const { entry } = this.current();
       if (entry) { this.view.setStrategyProps(entry.inst.id, undefined); this.toast(t('st.toastDefaults')); }

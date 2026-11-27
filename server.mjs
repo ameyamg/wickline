@@ -387,14 +387,17 @@ async function yahooOlder({ symbol, tf, prepost, before, count, from, force, for
     const base = r.bars.map(toChart);
     bars = cfg.aggregate ? aggregateSessions(base, cfg.aggregate, { anchor: info.sessionOpen != null ? (x) => sessionStart(x, info.sessionOpen) : null, trimFirst: true }) : base;
   }
+  // A US stock or ETF read from what Yahoo keeps because no Alpaca key is set: a free key would give
+  // it 1-minute history back to 2016 (the page says so where the history runs out).
+  const hint = !alp && !history.settings.alpaca && info.currency === 'USD' && /EQUITY|ETF/.test(info.type || '') && alpacaSymbol(symbol) ? 'alpaca' : null;
   if (forward) {
     bars = bars.filter((b) => b.time >= from).slice(0, count);
     if (r.more && t.sec > 60 && bars.length > 1) bars.pop(); // the last group may be cut: it comes whole with the next window
-    return { bars, more: r.more, ask: r.ask, source: alp ? 'alpaca' : 'yahoo' };
+    return { bars, more: r.more, ask: r.ask, source: alp ? 'alpaca' : 'yahoo', hint };
   }
   bars = bars.filter((b) => b.time < before);
   if (from == null && bars.length > count) bars = bars.slice(bars.length - count);
-  return { bars, done: r.done, ask: r.ask, source: alp ? 'alpaca' : 'yahoo' };
+  return { bars, done: r.done, ask: r.ask, source: alp ? 'alpaca' : 'yahoo', hint };
 }
 
 /** A crypto chart's series: Binance or Binance Futures, at the chart's base interval if it's under an hour (else null). */

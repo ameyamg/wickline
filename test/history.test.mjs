@@ -119,6 +119,30 @@ try {
     const wider = await h.download(KEY, { from: T('2026-08-01T00:00:00Z') });
     assert.equal(wider.topUp, false);
     await waitJob(h, wider);
+    // Past months that are only partly here are real downloads too, not a top-up.
+    await h.store.writeMonth(KEY, '2026-07', (await fakeSource().month('2026-07')).bars.slice(0, 100), { complete: false });
+    const partial = await h.download(KEY, { from: T('2026-07-01T00:00:00Z') });
+    assert.equal(partial.topUp, false, 'July (partly here) and November: shown');
+    await waitJob(h, partial);
+  });
+
+  await ok('a top-up that a bigger download joins while it runs is shown as a download from then on', async () => {
+    const slow = fakeSource();
+    const real = slow.month;
+    let release;
+    const gate = new Promise((r) => { release = r; });
+    slow.month = async (ym) => { await gate; return real(ym); };
+    const { h } = make(slow);
+    await h.store.writeMonth(KEY, '2026-11', (await real('2026-11')).bars.slice(0, 100), { complete: false }); // this month, partly here
+    const top = await h.download(KEY, { from: T('2026-11-01T00:00:00Z'), quiet: true });
+    assert.equal(top.topUp, true);
+    const range = await h.download(KEY, { from: T('2026-05-01T00:00:00Z') }); // a range test, while the top-up runs
+    assert.equal(range, top, 'it joins the running job');
+    assert.equal(top.topUp, false, 'which is now a real download');
+    assert.equal(top.quiet, false);
+    assert.ok(top.total >= 7);
+    release();
+    await waitJob(h, top);
   });
 
   await ok('a download the user started carries on after a restart, fetching only what\'s missing', async () => {

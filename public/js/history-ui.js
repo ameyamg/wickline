@@ -118,6 +118,7 @@ function wireSettings() {
       const s = await saveHistorySettings({ alpaca: { keyId, secret } });
       if (s.alpacaError) { say(s.alpacaError === 'auth' || s.alpacaError === 'empty' ? t('hist.set.badKey') : t('hist.set.keyError', { error: s.alpacaError }), 'err'); return; }
       fill(s);
+      window.dispatchEvent(new Event('wickline:alpaca')); // charts and the tester use it right away (app.js)
     } catch (e) {
       say(t('hist.set.keyError', { error: e.message }), 'err');
     }
@@ -126,5 +127,9 @@ function wireSettings() {
   for (const id of ['#set-alpaca-id', '#set-alpaca-secret']) {
     $(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); connect(); } });
   }
-  $('#set-alpaca-remove').addEventListener('click', async () => { fill(await saveHistorySettings({ alpaca: null })); say(t('hist.set.removed')); });
+  $('#set-alpaca-remove').addEventListener('click', async () => {
+    fill(await saveHistorySettings({ alpaca: null }));
+    say(t('hist.set.removed'));
+    window.dispatchEvent(new Event('wickline:alpaca'));
+  });
 }

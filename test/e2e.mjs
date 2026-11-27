@@ -532,6 +532,19 @@ app.whenReady().then(async () => {
       for (let k = 0; k < 6 && f.canLoadMore && v.bars[0].time > Date.now() / 1000 - 40 * 86400; k++) n += await v.loadOlder();
       return { history: f.history, n, first: v.bars[0].time, ordered: v.bars.every((b, i, a) => !i || b.time > a[i - 1].time) }; })()`);
     check('crypto charts scroll back past 31 days from the archive', scroll.history && scroll.ordered && scroll.first < Date.now() / 1000 - 40 * 86400, JSON.stringify({ ...scroll, first: new Date(scroll.first * 1000).toISOString().slice(0, 10) }));
+    // Without an Alpaca key (this profile has none), a US stock's intraday history ends where Yahoo's does:
+    // a bar says a free key gives years more, only once the oldest bar is on screen; × closes it for that chart.
+    await open('YAHOO:AAPL', '30m');
+    await wait(2500); // the load ahead finds the end right away on 30m
+    const hintAtOpen = await run(`!window.__wickline.views()[0].q('.hist-hint').hidden`);
+    const hintAtStart = await run(`(async () => { const v = window.__wickline.views()[0]; const ts = v.chart.timeScale(); const w = (ms) => new Promise((r) => setTimeout(r, ms));
+      for (let k = 0; k < 150; k++) { const r = ts.getVisibleLogicalRange(); if (r.from <= 0 && !v.feed.canLoadMore) break; const d = r.to - r.from; ts.setVisibleLogicalRange({ from: r.from - d, to: r.to - d }); await w(150); }
+      await w(1000); const box = v.q('.hist-hint'); const shown = !box.hidden, text = box.querySelector('.ha-text').textContent;
+      box.querySelector('[data-hh="close"]').click(); const r = ts.getVisibleLogicalRange(); ts.setVisibleLogicalRange({ from: r.from + 100, to: r.to + 100 }); await w(300);
+      ts.setVisibleLogicalRange(r); await w(300);
+      return { shown, text, closedStays: box.hidden }; })()`);
+    check('without an Alpaca key, a US stock says a free key gives more history, only where Yahoo\'s ends; × closes it',
+      !hintAtOpen && hintAtStart.shown && /AAPL/.test(hintAtStart.text) && hintAtStart.closedStays, JSON.stringify({ hintAtOpen, ...hintAtStart }));
     await open('BINANCE:BTCUSDT', '1m');
     const replay = await run(`(async () => { const v = window.__wickline.views()[0]; v.startReplayPick(); const target = Date.parse('2024-03-12T15:30:00Z') / 1000 + v.feed.shift;
       await v.replayToDate(new Date(target * 1000).toISOString().slice(0, 16)); const r = v.replay;
