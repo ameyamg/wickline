@@ -17,7 +17,7 @@ export async function initHistoryUI({ openSettings }) {
   let status = null;
 
   const renderButton = () => {
-    const n = status?.jobs.filter(active).length || 0;
+    const n = status?.jobs.filter((j) => active(j) && !j.topUp).length || 0; // a top-up of this month's newest bars isn't a download to show
     btn.hidden = !n && pop.hidden;
     btn.innerHTML = `${ICON_DOWN}<span>${n || ''}</span>`;
     btn.title = t('hist.dl.title');

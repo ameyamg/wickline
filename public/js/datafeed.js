@@ -240,23 +240,31 @@ class BinanceFeed {
   }
 
   /**
-   * Older bars. Past the last 31 days of a chart under an hour, or to reach a replay's date (from,
-   * chart time), they come from downloaded history (js/history.js): Binance's archive, a month at a
-   * time, kept on this computer. Otherwise, and if that fails, from the API, 1000 klines a page.
-   * A download that would be big isn't started: pendingAsk says how big (the chart asks the user).
+   * Older bars. Of a chart under an hour, before this month (or to reach a replay's date: from, chart
+   * time), they come from downloaded history (js/history.js): Binance's archive, a month at a time,
+   * kept on this computer, so scrolling back through it doesn't wait on the API. This month isn't in
+   * the archive until it ends: it comes from the API, 1000 klines a page, as does anything the download
+   * fails on. A download that would be big isn't started: pendingAsk says how big (the chart asks the
+   * user); for the last 31 days it isn't asked, the API just pages them.
    */
   async loadOlder(firstTime, { from = null } = {}) {
     if (!this.canLoadMore) return [];
     this.pendingAsk = null;
     const firstUtc = firstTime - this.shift;
-    if (this.history && this.plan.base.sec < 3600 && (from != null || firstUtc < Date.now() / 1000 - 31 * 86400)) {
+    const now = new Date();
+    const monthStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) / 1000;
+    const recent = firstUtc > now / 1000 - 31 * 86400;
+    if (this.history && this.plan.base.sec < 3600 && (from != null || firstUtc <= monthStart)) {
       try {
         const r = await cryptoOlder(`${this.src}:${this.ticker}`, this.tf.id, firstUtc, {
           count: Math.min(20000, 1500 * (this.plan.factor || 1)), from: from != null ? from - this.shift : null,
         });
-        this.pendingAsk = r.ask;
-        if (r.done && !r.bars.length) this.canLoadMore = false;
-        if (r.bars.length || r.ask || r.done) return this.olderChart(r.bars.filter((b) => b.time < firstUtc), firstTime);
+        const bars = r.bars.filter((b) => b.time < firstUtc);
+        if (bars.length || (!recent && (r.ask || r.done))) {
+          this.pendingAsk = r.ask;
+          if (r.done && !bars.length) this.canLoadMore = false;
+          return this.olderChart(bars, firstTime);
+        }
       } catch (e) {
         console.warn('Downloaded history failed, using the API:', e.message);
       }

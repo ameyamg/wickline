@@ -102,6 +102,25 @@ try {
     assert.ok(big.done < big.total);
   });
 
+  await ok('asked again, only this month\'s newest bars are fetched: a quiet top-up, not shown as a download', async () => {
+    const { h, src } = make();
+    const first = await h.download(KEY, { from: T('2026-09-01T00:00:00Z') });
+    await waitJob(h, first);
+    assert.equal(first.topUp, false, 'the first time it is a real download');
+    assert.equal(first.total, 3);
+    const again = await h.download(KEY, { from: T('2026-09-01T00:00:00Z') });
+    await waitJob(h, again);
+    assert.equal(again.total, 1, 'only November, which isn\'t over');
+    assert.equal(again.topUp, true);
+    assert.equal(again.quiet, true);
+    assert.equal((await h.status()).jobs.find((j) => j.id === again.id), undefined, 'done top-ups drop out of the list');
+    assert.deepEqual(src.asked, ['2026-11', '2026-10', '2026-09', '2026-11']);
+    // A range that also needs a month not here yet is a real download again.
+    const wider = await h.download(KEY, { from: T('2026-08-01T00:00:00Z') });
+    assert.equal(wider.topUp, false);
+    await waitJob(h, wider);
+  });
+
   await ok('a download the user started carries on after a restart, fetching only what\'s missing', async () => {
     // First run: two months come in, then the app "closes" (the source stops answering).
     const stuck = fakeSource();

@@ -52,9 +52,9 @@ export function prefetchHistory(symbol, tf, prepost = false) {
   return call('prefetch', { symbol, tf, prepost: !!prepost }).then(() => watchDownloads()).catch(() => {});
 }
 
-/** Downloads a chart's history back to `from` (UTC seconds) in the background. → { id } */
-export async function startDownload(symbol, tf, from) {
-  const r = await call('download', { symbol, tf, from: Math.floor(from) });
+/** Downloads a chart's history from `from` to `to` (UTC seconds; to: now) in the background. → { id } */
+export async function startDownload(symbol, tf, from, to = null) {
+  const r = await call('download', { symbol, tf, from: Math.floor(from), ...(to != null ? { to: Math.ceil(to) } : {}) });
   watchDownloads();
   return r;
 }
@@ -93,16 +93,24 @@ export function watchDownloads() {
   timer = setTimeout(tick, 250);
 }
 
-/** Resolves with a download's last state once it has ended ('done', 'error' or 'cancelled'). */
-export function whenDownloaded(id) {
-  return new Promise((resolve) => {
-    const stop = onHistoryStatus((s) => {
-      const j = s.jobs.find((x) => x.id === id);
-      if (!j || j.state === 'done' || j.state === 'error' || j.state === 'cancelled') { stop(); resolve(j?.state || 'done'); }
-    });
-    watchDownloads();
-  });
+/**
+ * Follows one download until it ends: onProgress(job) on every status ({ done, total, bytes, … }), then
+ * → the job as it ended (state 'done', 'error' or 'cancelled'). Asks the server each time, so a status
+ * from before the job started can't pass for its end.
+ */
+export async function followDownload(id, onProgress = () => {}, { every = 700 } = {}) {
+  for (;;) {
+    const s = await historyStatus();
+    publish(s);
+    const j = s.jobs.find((x) => x.id === id);
+    if (j) onProgress(j);
+    if (!j || j.state === 'done' || j.state === 'error' || j.state === 'cancelled') return j || { id, state: 'done' };
+    await new Promise((r) => setTimeout(r, every));
+  }
 }
+
+/** Resolves with a download's last state once it has ended ('done', 'error' or 'cancelled'). */
+export const whenDownloaded = (id) => followDownload(id, undefined, { every: 1500 }).then((j) => j.state, () => 'error');
 
 /** "140 MB", "820 KB", "1.4 GB" */
 export function formatBytes(n, locale) {

@@ -489,7 +489,8 @@ async function handleHistory(url, req, res) {
       if (route === 'download') {
         const key = downloadKey(body);
         if (!key) return sendPrivate(res, 400, { error: 'This chart has no history to download' });
-        const job = await history.download(key, { from: num(body.from) ?? 0 });
+        const from = num(body.from), to = num(body.to); // UTC seconds; no `to`: up to now
+        const job = await history.download(key, { from: Number.isFinite(from) ? from : 0, to: Number.isFinite(to) ? to : undefined });
         return sendPrivate(res, 200, { id: job.id });
       }
       if (route === 'cancel') return sendPrivate(res, 200, { ok: history.cancel(Number(body.id)) });

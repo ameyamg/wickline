@@ -1,4 +1,5 @@
-// The Strategy Tester panel: results of the strategy scripts on the active chart.
+// The Strategy Tester panel: results of the strategy scripts on the active chart, on the chart's own
+// bars (updated live) or over a date range (From / To), whose history loads, and downloads first, for it.
 
 import * as LWC from '../vendor/lightweight-charts.mjs';
 import { THEMES, currentThemeName } from './chart-view.js';
@@ -6,6 +7,14 @@ import { STRATEGY_DEFAULTS } from './backtest.js';
 import { $, esc, store, fixed } from './util.js';
 import { tradesCsv } from './csv.js';
 import { t, lang, locale } from './i18n.js';
+import { loadRangeBars, RangeCancelled, rangeTimeout } from './range-test.js';
+import { formatBytes } from './history.js';
+
+/** Most points drawn per line on the Overview chart (a range test can have a million bars): enough
+ *  for any screen's width, and few enough to all fit in the chart. */
+const CHART_POINTS = 4000;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const isoDay = (ms) => new Date(ms).toISOString().slice(0, 10);
 
 // Exit reasons backtest.js writes (English, it runs in a worker) → the UI language. A script's own
 // comment is shown as written.
@@ -42,7 +51,6 @@ export class StrategyTester {
     this.content = $('#st-content');
     this.tab = 'overview';
     this.view = null;
-    this.entryId = null;
     this.chart = null;
     this.seen = new Set(); // strategies that already opened the panel once
 
@@ -53,7 +61,9 @@ export class StrategyTester {
       this.tableSig = null;
       this.render();
     });
-    this.select.addEventListener('change', () => { this.entryId = this.select.value; this.render(); });
+    // Picking a strategy makes it the one on the chart (the chart shows one; the others wait in this list).
+    this.select.addEventListener('change', () => { this.view?.setActiveStrategy(this.select.value); this.render(); });
+    this.buildRangeBar();
     $('#st-close').addEventListener('click', () => this.close());
     $('#st-add').addEventListener('click', () => this.browseStrategies?.());
     this.content.addEventListener('click', (e) => this.onClick(e));
@@ -73,6 +83,160 @@ export class StrategyTester {
 
   get isOpen() { return !this.el.hidden; }
 
+  // --- Date range ------------------------------------------------------------------
+  /**
+   * "Chart bars" (the strategy as it runs on the chart, live) or "Date range": From / To and Run. A
+   * range test is a snapshot: its bars load (and download first) for it, then the strategy runs over
+   * them in a worker of its own, with the chart's inputs and properties.
+   */
+  buildRangeBar() {
+    const saved = store.get('testerDates', null);
+    const today = isoDay(Date.now());
+    const day = (v, fallback) => (typeof v === 'string' && DATE_RE.test(v) ? v : fallback);
+    // results / errors: each strategy's last range test (by its id), so switching between them shows
+    // theirs straight away. used: Run was pressed, so a strategy or chart without a test gets one by itself.
+    this.range = { mode: store.get('testerRange', 'chart') === 'range' ? 'range' : 'chart', run: null, results: new Map(), errors: new Map(), used: false, cache: null };
+    const box = document.createElement('span');
+    box.className = 'st-range';
+    box.innerHTML = `<select class="select st-range-mode" aria-label="${esc(t('st.range.label'))}" title="${esc(t('st.range.label'))}">
+        <option value="chart">${esc(t('st.range.chart'))}</option><option value="range">${esc(t('st.range.dates'))}</option></select>
+      <span class="st-range-dates">
+        <input type="date" class="rp-date st-from" aria-label="${esc(t('st.range.from'))}" title="${esc(t('st.range.from'))}" max="${today}" value="${day(saved?.from, isoDay(Date.now() - 365 * 86400e3))}">
+        <span class="muted">–</span>
+        <input type="date" class="rp-date st-to" aria-label="${esc(t('st.range.to'))}" title="${esc(t('st.range.to'))}" max="${today}" value="${day(saved?.to, today)}">
+        <button type="button" class="tb-btn st-run">${esc(t('st.range.run'))}</button>
+      </span>`;
+    this.el.querySelector('.st-tabs').before(box);
+    this.modeSel = box.querySelector('.st-range-mode');
+    this.fromInput = box.querySelector('.st-from');
+    this.toInput = box.querySelector('.st-to');
+    this.datesEl = box.querySelector('.st-range-dates');
+    this.modeSel.value = this.range.mode;
+    this.datesEl.hidden = this.range.mode !== 'range';
+    this.modeSel.addEventListener('change', () => {
+      this.range.mode = this.modeSel.value === 'range' ? 'range' : 'chart';
+      store.set('testerRange', this.range.mode);
+      this.datesEl.hidden = this.range.mode !== 'range';
+      this.tableSig = null;
+      this.render();
+    });
+    box.querySelector('.st-run').addEventListener('click', () => this.runRange({ pressed: true }));
+    for (const input of [this.fromInput, this.toInput]) {
+      input.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') this.runRange({ pressed: true }); });
+    }
+  }
+
+  /** What a range result belongs to: the chart's symbol and timeframe. */
+  viewKey() { return this.view ? `${this.view.state.symbol}|${this.view.tf.id}` : ''; }
+
+  /**
+   * The chart shows what the tester shows: the date-range test's trades and numbers for `entry` (the
+   * strategy on the chart) while the tester shows that test, its own result otherwise (and once closed).
+   */
+  syncChart(entry = null, result = null) {
+    for (const view of new Set([this.view, this.chartShowing].filter(Boolean))) {
+      for (const e of view.strategies?.() || []) view.showStrategyRange?.(e.inst.id, view === this.view && e === entry ? result : null);
+    }
+    this.chartShowing = result ? this.view : null;
+  }
+
+  /** This strategy's range test (or failed one) of the chart as it is now (symbol and timeframe), if any. */
+  rangeOf(map, entry) {
+    const x = map.get(entry.inst.id);
+    return x && x.viewKey === this.viewKey() ? x : null;
+  }
+
+  /**
+   * Runs the strategy shown over From..To (days in chart time, the same as the chart's axis). pressed:
+   * the user pressed Run (maybe with new dates): the other strategies' tests are dropped, so picking one
+   * tests it on these dates too.
+   */
+  async runRange({ pressed = false } = {}) {
+    const { entry } = this.current();
+    const view = this.view;
+    if (!entry || !view) { this.toast(t('st.noStrategy')); return; }
+    const from = Date.parse(`${this.fromInput.value}T00:00:00Z`) / 1000;
+    const to = Date.parse(`${this.toInput.value}T00:00:00Z`) / 1000 + 86399;
+    if (!Number.isFinite(from) || !Number.isFinite(to) || from >= to) { this.toast(t('st.range.badDates')); return; }
+    store.set('testerDates', { from: this.fromInput.value, to: this.toInput.value });
+    if (this.range.mode !== 'range') { this.modeSel.value = 'range'; this.modeSel.dispatchEvent(new Event('change')); }
+    this.range.run?.handle.cancel?.();
+    const viewKey = this.viewKey();
+    const key = `${viewKey}|${from}|${to}`;
+    const run = { entryId: entry.inst.id, viewKey, step: 'start', handle: {} };
+    this.range.run = run;
+    this.range.used = true;
+    if (pressed) { this.range.results.clear(); this.range.errors.clear(); }
+    this.range.errors.delete(entry.inst.id);
+    this.tableSig = null;
+    this.render();
+    const progress = (s) => {
+      Object.assign(run, s);
+      if (this.range.run === run && this.isOpen && this.range.mode === 'range') this.renderProgress(run);
+    };
+    try {
+      let bars = this.range.cache?.key === key ? this.range.cache.bars : null;
+      if (!bars) {
+        bars = await loadRangeBars(view.state.symbol, view.tf, from, to, { onStep: progress, run: run.handle });
+        if (this.range.run !== run) return;
+        this.range.cache = { key, bars };
+      }
+      if (bars.length < 2) throw new Error(t('st.range.noBars'));
+      progress({ step: 'test', bars: bars.length });
+      const res = await view.backtestBars(entry.inst.id, bars, { timeoutMs: rangeTimeout(bars.length) });
+      if (this.range.run !== run) return;
+      if (!res.strategy) throw new Error(t('st.range.notStrategy'));
+      this.range.results.set(entry.inst.id, {
+        entryId: entry.inst.id, viewKey, from, to, start: bars[0].time, end: bars[bars.length - 1].time,
+        report: res.strategy, times: bars.map((b) => b.time),
+      });
+    } catch (e) {
+      if (e instanceof RangeCancelled || this.range.run !== run) return;
+      this.range.errors.set(entry.inst.id, { entryId: entry.inst.id, viewKey, message: e.message });
+      this.range.results.delete(entry.inst.id);
+    } finally {
+      if (this.range.run === run) { this.range.run = null; this.render(); }
+    }
+  }
+
+  cancelRange() {
+    const run = this.range.run;
+    if (!run) return;
+    run.handle.cancel?.(); // a test already running finishes in its worker; its result is dropped
+    this.range.run = null;
+    this.render();
+  }
+
+  renderProgress(run) {
+    const n = (v) => Number(v || 0).toLocaleString(locale);
+    let text = t('st.range.preparing');
+    let share = null; // null: a bar that moves without a known end
+    if (run.step === 'download') {
+      text = t('st.range.downloading', { symbol: this.view?.ticker || '', done: n(run.done), total: n(run.total), size: formatBytes(run.bytes || 0, locale) });
+      share = run.total ? run.done / run.total : 0;
+    } else if (run.step === 'load') text = t('st.range.loading', { n: n(run.bars) });
+    else if (run.step === 'test') text = t('st.range.testing', { n: n(run.bars) });
+    let box = this.content.querySelector('.st-progress');
+    if (!box) {
+      this.destroyChart();
+      this.content.innerHTML = `<div class="st-empty st-progress" role="status"><b class="st-progress-text"></b>
+        <div class="st-bar"><i></i></div><button type="button" class="btn-ghost" data-st="cancel">${esc(t('common.cancel'))}</button></div>`;
+      box = this.content.querySelector('.st-progress');
+    }
+    box.querySelector('.st-progress-text').textContent = text;
+    const bar = box.querySelector('.st-bar');
+    bar.classList.toggle('busy', share == null);
+    bar.querySelector('i').style.width = share == null ? '' : `${Math.round(share * 100)}%`;
+  }
+
+  rangeEmptyHtml(entry) {
+    const e = this.rangeOf(this.range.errors, entry);
+    const failed = !!e;
+    return `<div class="st-empty"><b>${esc(failed ? t('st.range.failed') : t('st.range.title'))}</b>
+      ${failed ? `<span>${esc(e.message)}</span>` : ''}
+      <span>${esc(t('st.range.howTo', { name: entry.def?.name || '', symbol: this.view?.ticker || '' }))}</span></div>`;
+  }
+
   open() {
     this.el.hidden = false;
     document.body.classList.add('tester-open');
@@ -81,6 +245,7 @@ export class StrategyTester {
   }
 
   close() {
+    this.syncChart(); // closed: the chart shows the strategies' own results
     this.el.hidden = true;
     document.body.classList.remove('tester-open');
     window.dispatchEvent(new Event('resize'));
@@ -103,19 +268,20 @@ export class StrategyTester {
   onResult(view, entry) {
     if (!this.seen.has(entry.inst.id)) {
       this.seen.add(entry.inst.id);
-      if (view === this.getView()) { this.view = view; this.entryId = entry.inst.id; if (!this.isOpen) this.open(); }
+      if (view === this.getView()) {
+        this.view = view;
+        if (!this.isOpen) this.open();
+        else if (entry === view.activeStrategy()) { this.render(); return; } // a strategy just added: the tester switches to it
+      }
     }
     if (view !== this.view || !this.isOpen) return;
-    if (!this.entryId || !view.live.has(this.entryId)) this.entryId = entry.inst.id;
-    if (entry.inst.id === this.entryId) this.render(true);
+    if (entry === view.activeStrategy()) this.render(true);
   }
 
+  /** The chart's strategies, and the one it shows (the tester shows the same one). */
   current() {
     const strategies = this.view?.strategies() || [];
-    if (!strategies.length) return { strategies, entry: null };
-    const entry = strategies.find((e) => e.inst.id === this.entryId) || strategies[strategies.length - 1];
-    this.entryId = entry.inst.id;
-    return { strategies, entry };
+    return { strategies, entry: this.view?.activeStrategy?.() || null };
   }
 
   render(live = false) {
@@ -128,27 +294,49 @@ export class StrategyTester {
     this.el.querySelectorAll('[data-st-tab]').forEach((b) => b.classList.toggle('on', b.dataset.stTab === this.tab));
     $('#st-symbol').textContent = this.view ? `${this.view.ticker} · ${this.view.tf.label}` : '';
 
-    if (!entry || !entry.report) {
+    // What to show: the strategy's result on the chart's bars, or its date-range test (a snapshot,
+    // so the chart's live updates leave it alone). The chart shows the same (syncChart).
+    let src = entry;
+    if (entry && this.range.mode === 'range') {
+      if (live) return;
+      const { run } = this.range;
+      const running = run && run.entryId === entry.inst.id && run.viewKey === this.viewKey();
+      const ours = this.rangeOf(this.range.results, entry);
+      // Once Run has been used: a strategy picked (or just added), or the chart on another symbol or
+      // timeframe, without a test there yet gets one, for the same dates (downloading what it needs first).
+      if (this.range.used && !running && !ours && !this.rangeOf(this.range.errors, entry)) { this.runRange(); return; }
+      this.syncChart(entry, ours);
+      if (running) { this.shown = null; this.renderProgress(run); return; }
+      if (!ours) {
+        this.destroyChart();
+        this.shown = null;
+        this.content.innerHTML = this.rangeEmptyHtml(entry);
+        return;
+      }
+      src = { inst: entry.inst, def: entry.def, report: ours.report, times: ours.times, range: ours };
+    } else this.syncChart();
+    this.shown = src?.report ? src : null;
+    if (!src || !src.report) {
       this.destroyChart();
       this.content.innerHTML = this.emptyHtml(entry);
       return;
     }
     // Live updates only refresh what's visible, and keep the properties form untouched while editing.
     if (live && this.tab === 'properties') return;
-    const r = entry.report;
-    if (this.tab === 'overview') { this.renderOverview(entry, r, live); return; }
+    const r = src.report;
+    if (this.tab === 'overview') { this.renderOverview(src, r, live); return; }
     this.destroyChart();
-    if (this.tab === 'properties') { this.renderProps(entry, r); return; }
+    if (this.tab === 'properties') { this.renderProps(src, r); return; }
     // Tables: on live ticks, redraw only when the trades changed, and keep scroll and selection.
     const last = r.trades[r.trades.length - 1];
-    const sig = `${this.tab}|${entry.inst.id}|${r.trades.length}|${r.openTrades.length}|${last?.exitIndex}|${Math.round(r.summary.openPnl)}`;
+    const sig = `${this.tab}|${entry.inst.id}|${src.range ? `range:${src.range.from}-${src.range.to}` : 'chart'}|${r.trades.length}|${r.openTrades.length}|${last?.exitIndex}|${Math.round(r.summary.openPnl)}`;
     if (live && sig === this.tableSig) return;
     this.tableSig = sig;
     const wrap = this.content.querySelector('.st-table-wrap');
     const scroll = live && wrap ? wrap.scrollTop : 0;
     const selected = live ? this.content.querySelector('tr.sel')?.dataset.ei : null;
     if (this.tab === 'performance') this.renderPerformance(r);
-    else this.renderTrades(entry, r);
+    else this.renderTrades(src, r);
     const next = this.content.querySelector('.st-table-wrap');
     if (next) next.scrollTop = scroll;
     if (selected != null) this.content.querySelector(`tr[data-ei="${selected}"]`)?.classList.add('sel');
@@ -170,17 +358,25 @@ export class StrategyTester {
     </div>`;
     if (!live || !this.content.querySelector('.st-kpis')) {
       this.destroyChart();
+      // A range test says what it covered, and when the data started later than asked.
+      const rg = entry.range;
+      const daily = this.view?.tf.daily;
+      const span = rg ? `${esc(t('st.range.span', { from: fmtTime(rg.start, true), to: fmtTime(rg.end, true) }))}${rg.start > rg.from + 5 * 86400 ? ` (${esc(t('st.range.dataFrom', { date: fmtTime(rg.start, daily) }))})` : ''} · ` : '';
       this.content.innerHTML = `${kpis}<div class="st-chart-wrap"><div class="st-legend">
         <span><i style="background:#4FA3F7"></i>${esc(t('st.equity'))}</span><span><i style="background:#8E8A82"></i>${esc(t('st.buyHold'))}</span><span><i style="background:#EC5246"></i>${esc(t('st.drawdown'))}</span>
-        <span class="muted">${esc(t('st.bars', { n: r.equity.length.toLocaleString(locale) }))} · ${esc(this.describeProps(r.props))}</span></div><div class="st-chart"></div></div>`;
+        <span class="muted">${span}${esc(t('st.bars', { n: r.equity.length.toLocaleString(locale) }))} · ${esc(this.describeProps(r.props))}</span></div><div class="st-chart"></div></div>`;
       this.createChart();
     } else {
       this.content.querySelector('.st-kpis').outerHTML = kpis;
     }
     const times = entry.times;
+    // Over many bars, every step-th point (and the last): the line looks the same and stays quick.
+    const step = Math.max(1, Math.ceil(times.length / CHART_POINTS));
     const mk = (arr) => {
       const out = [];
-      for (let i = 0; i < arr.length; i++) if (times[i] != null) out.push({ time: times[i], value: arr[i] });
+      for (let i = 0; i < arr.length; i += step) if (times[i] != null) out.push({ time: times[i], value: arr[i] });
+      const z = arr.length - 1;
+      if (step > 1 && z >= 0 && z % step && times[z] != null) out.push({ time: times[z], value: arr[z] });
       return out;
     };
     this.eqSeries.setData(mk(r.equity));
@@ -198,7 +394,8 @@ export class StrategyTester {
       localization: { locale, ...(lang === 'en' ? {} : { dateFormat: 'yyyy-MM-dd' }) }, // as the main chart
       grid: { vertLines: { color: th.grid }, horzLines: { color: th.grid } },
       rightPriceScale: { borderColor: th.border },
-      timeScale: { borderColor: th.border, timeVisible: !this.view?.tf.daily },
+      // minBarSpacing: the whole test fits the width (the library's default, 0.5 px a point, can't show 4,000)
+      timeScale: { borderColor: th.border, timeVisible: !this.view?.tf.daily, minBarSpacing: 0.05 },
       crosshair: { mode: LWC.CrosshairMode.Normal },
     });
     const fmt = { type: 'price', precision: 2, minMove: 0.01 };
@@ -302,7 +499,7 @@ export class StrategyTester {
   }
 
   exportCsv() {
-    const { entry } = this.current();
+    const entry = this.shown; // the chart's result or the range test's, as on screen
     if (!entry?.report) return;
     // Every field quoted; script text that a spreadsheet would run as a formula is kept as text (csv.js).
     const a = document.createElement('a');
@@ -349,6 +546,8 @@ export class StrategyTester {
     };
     this.view.setStrategyProps(entry.inst.id, props);
     this.toast(t('st.toastUpdated'));
+    // A range test shown runs again with them (its bars are kept, so only the test runs).
+    if (this.range.mode === 'range' && this.range.results.has(entry.inst.id)) this.runRange();
   }
 
   /** What the panel says when there's nothing to show yet. Scripts that only draw buy/sell markers
@@ -384,6 +583,7 @@ export class StrategyTester {
     const act = e.target.closest('[data-st]')?.dataset.st;
     if (act === 'browse') { this.browseStrategies?.(); return; }
     if (act === 'csv') { this.exportCsv(); return; }
+    if (act === 'cancel') { this.cancelRange(); return; }
     if (act === 'reset') {
       const { entry } = this.current();
       if (entry) { this.view.setStrategyProps(entry.inst.id, undefined); this.toast(t('st.toastDefaults')); }
@@ -391,7 +591,9 @@ export class StrategyTester {
     }
     const row = e.target.closest('tr[data-ei]');
     if (row && this.view) {
-      this.view.focusBars(Number(row.dataset.ei), Number(row.dataset.xi));
+      const rg = this.shown?.range;
+      if (!rg) this.view.focusBars(Number(row.dataset.ei), Number(row.dataset.xi));
+      else if (!this.view.focusTimes(rg.times[Number(row.dataset.ei)], rg.times[Number(row.dataset.xi)])) this.toast(t('st.range.notOnChart'));
       this.content.querySelectorAll('tr.sel').forEach((r) => r.classList.remove('sel'));
       row.classList.add('sel');
     }

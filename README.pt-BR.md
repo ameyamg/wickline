@@ -9,7 +9,7 @@ Plataforma de gráficos gratuita e de código aberto (gráficos de candles para 
 - Ferramentas de desenho, alertas de preço e de 1 a 8 gráficos por tela.
 - Biblioteca da comunidade: publique seus scripts para todos e adicione os de outras pessoas com um clique.
 - Screener, mapa de calor (18 mercados de ações, incluindo o Brasil, e criptomoedas), notícias e calendário econômico, replay de candles e simulador (paper trading).
-- Histórico profundo: gráficos de cripto de 1 minuto até 2017 e de ações dos EUA até 2016 com uma chave gratuita da Alpaca (opcional). Fica guardado no seu computador, e o replay pode começar anos atrás.
+- Histórico profundo: gráficos de cripto de 1 minuto até 2017 e de ações dos EUA até 2016 com uma chave gratuita da Alpaca (opcional). Fica guardado no seu computador, e o replay pode começar anos atrás. O testador de estratégias também pode usar um intervalo de datas com todo esse histórico.
 - Sem cadastro e sem assinatura; nenhuma chave de API é necessária (a da Alpaca é opcional).
 
 **[Baixe o app para desktop](../../releases/latest)** (Windows, macOS, Linux). É só instalar e usar, sem nenhuma configuração.

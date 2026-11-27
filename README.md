@@ -119,7 +119,9 @@ A free, open-source charting platform.
   - Performance table split into long and short.
   - List of trades: click a trade to see it on the chart, or export to CSV.
   - Editable properties: capital, order size, commission, slippage, pyramiding, fill timing.
-- **On the chart:** entry and exit markers, plus a line from each entry to its exit.
+  - **Date range:** test on the chart's bars (live), or pick **From / To** and press **Run**. History this computer doesn't have downloads first, with its progress; then the test runs over every bar of the range (a year of 1-minute bars is over 500,000). Switching the chart's timeframe or symbol, or the strategy, tests the same dates there.
+  - **Several strategies:** add as many as you like; the chart shows one at a time, and the tester's list switches between them.
+- **On the chart:** entry and exit markers, plus a line from each entry to its exit. With a date range, the chart shows that test's trades and numbers, the same as the tester.
 
 **Bar replay and paper trading**
 - **Back to now:** scrolled back in history, the » button in the corner of the chart brings the latest candle back into view.
@@ -250,6 +252,8 @@ A chart first loads a recent stretch, and you can scroll or replay further back.
 - **US stocks and ETFs, with a free [Alpaca](https://alpaca.markets) key:** 1-minute bars back to 2016. Add the key under ⚙ (Data sources) → **Alpaca**. It's kept on your computer and sent only to Alpaca.
 - **Without a key:** Yahoo's intraday history is short (1-minute bars for about 30 days, 5- to 30-minute for 60 days, hourly for about two years). Wickline fetches all of it and keeps what it has seen, so a chart's history grows from the day you start using it.
 - **Replay far back:** a replay years back plays from a window around its date and downloads more as it goes, so only the months it reaches are needed.
+- **Backtests over a date range** (Strategy Tester → Date range) download the months they need first, showing their progress.
+- **Scrolling back** loads the next bars before you reach the edge, from the download wherever it has them.
 - **Small downloads just happen** (the next month when you scroll back, the last few months when you open a chart). **A big one asks first**, on the chart, with its size. While anything downloads, ↓ in the status bar shows it, with progress and Cancel.
 - **Size limit** (2 GB by default, under ⚙ → Downloaded history): when it's full, the symbols you haven't opened for longest are deleted first. You can also turn automatic downloads off, or delete everything.
 
@@ -427,8 +431,8 @@ strategy.exit({ stopLoss: 3, takeProfit: 6 });               // percent from the
 - Commission and slippage apply to every fill.
 
 **What the backtest covers:**
-- Backtests run over the bars loaded on the chart. On crypto charts, scroll left to load more history; daily stock charts load the full history.
-- Results update live as new bars arrive.
+- By default, backtests run over the bars loaded on the chart, and results update live as new bars arrive. On crypto charts, scroll left to load more history; daily stock charts load the full history.
+- With **Date range** (desktop app and `npm start`), a backtest runs over every bar between two dates, downloaded first if needed: years of 1-minute crypto, or of US stocks with an Alpaca key. Such a test is a snapshot; press Run to test again.
 - The Properties tab overrides the script's settings for that chart.
 
 The engine is plain JavaScript in `public/js/backtest.js`, covered by unit tests (`npm test`).

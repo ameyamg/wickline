@@ -70,13 +70,14 @@ class ScriptWorker {
   send(job) {
     clearTimeout(this.idleTimer);
     const { data } = job;
+    const limit = job.timeoutMs || TIMEOUT_MS;
     const timer = setTimeout(() => {
       if (!this.pending.has(job.id)) return;
       this.pending.delete(job.id);
-      job.reject(new ScriptError(t('scr.timeout', { n: TIMEOUT_MS / 1000 }), { halted: true }));
+      job.reject(new ScriptError(t('scr.timeout', { n: Math.round(limit / 1000) }), { halted: true }));
       // Other runs of this script waiting on the stopped worker are retried by their charts.
       this.restart(new ScriptError(t('scr.restarted'), { restarted: true }));
-    }, TIMEOUT_MS);
+    }, limit);
     this.pending.set(job.id, { ...job, data: null, bars: data.time.length, timer });
     this.worker.postMessage({ id: job.id, code: job.code, data, inputs: job.inputs, ctx: job.ctx }, Object.values(data).map((a) => a.buffer));
   }
@@ -136,14 +137,15 @@ class ScriptEngine {
 
   /**
    * Runs a script over bars. `key` names the script (its id); runs with the same key share a worker.
-   * Resolves with { meta, inputs, plots, hlines, fills, markers, consts, logs, ms }.
+   * Resolves with { meta, inputs, plots, hlines, fills, markers, consts, logs, ms }. `timeoutMs`: how long
+   * it may run (a backtest over a long date range needs more than a chart's few seconds).
    */
-  run(code, bars, inputs = {}, ctx = {}, key = null) {
+  run(code, bars, inputs = {}, ctx = {}, key = null, { timeoutMs = TIMEOUT_MS } = {}) {
     const src = String(code ?? '');
     const k = key == null || key === '' ? codeKey(src) : `script:${key}`;
     return new Promise((resolve, reject) => {
       // The bars are packed now, so a run that has to wait for a worker still uses the bars of this moment.
-      this.dispatch(k, { id: ++this.seq, code: src, data: packBars(bars), inputs, ctx, resolve, reject });
+      this.dispatch(k, { id: ++this.seq, code: src, data: packBars(bars), inputs, ctx, timeoutMs, resolve, reject });
     });
   }
 

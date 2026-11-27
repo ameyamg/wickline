@@ -12,16 +12,19 @@ export function setHiddenFlag(inst, hidden) {
   if (hidden) inst.hidden = true; else delete inst.hidden;
 }
 
+/** Whether an indicator draws on the chart: not hidden by its eye, and not a strategy other than the one shown (offChart). */
+const drawn = (entry) => !isHidden(entry.inst) && !entry.offChart;
+
 /** Markers are kept on the entry and sent to the chart only while the indicator is shown. */
 export function syncMarkers(entry) {
-  const shown = !isHidden(entry.inst);
+  const shown = drawn(entry);
   entry.markersApi?.setMarkers(shown ? entry.markerData ?? [] : []);
   entry.tradeMarkers?.setMarkers(shown ? entry.tradeMarkerData ?? [] : []);
 }
 
 /** Shows or hides everything the indicator draws, as its `hidden` flag says. */
 export function applyEntryVisibility(entry) {
-  const shown = !isHidden(entry.inst);
+  const shown = drawn(entry);
   for (const { api } of entry.series || []) api.applyOptions({ visible: shown });
   for (const line of entry.levelLines || []) line.applyOptions({ lineVisible: shown });
   for (const { prim } of entry.fillPrims || []) prim.setHidden(!shown);

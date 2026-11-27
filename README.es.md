@@ -9,7 +9,7 @@ Software de gráficos gratuito y de código abierto (gráficos de velas de accio
 - Herramientas de dibujo, alertas de precio y de 1 a 8 gráficos por pantalla.
 - Biblioteca de la comunidad: publica tus scripts para todos y añade los de otros con un clic.
 - Screener, mapa de calor (18 mercados de acciones, entre ellos España y Brasil, y criptomonedas), noticias y calendario económico, repetición de barras y trading simulado.
-- Historial profundo: los gráficos de criptomonedas por minuto llegan hasta 2017 y los de acciones de EE. UU. hasta 2016 con una clave gratuita de Alpaca (opcional). Se guarda en tu equipo, y la repetición de barras puede empezar años atrás.
+- Historial profundo: los gráficos de criptomonedas por minuto llegan hasta 2017 y los de acciones de EE. UU. hasta 2016 con una clave gratuita de Alpaca (opcional). Se guarda en tu equipo, y la repetición de barras puede empezar años atrás. La prueba de estrategias también puede usar un rango de fechas con todo ese historial.
 - Sin cuenta ni suscripción, y sin claves API (la de Alpaca es opcional).
 
 **[Descarga la app de escritorio](../../releases/latest)** para Windows, macOS o Linux. Funciona en cuanto la instalas, sin configurar nada.

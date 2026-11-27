@@ -274,6 +274,9 @@ function run({ code, data, inputs = {}, ctx = {} }) {
   } catch (e) {
     return { ok: false, error: `${e.name || 'Error'}: ${e.message}`, line: errorLine(e, names), logs };
   }
+  // A backtest over a date range shows only its report: a value per bar for each plot would be a lot
+  // of memory over a million bars, for lines nobody sees.
+  if (ctx.noPlots) { out.plots = []; out.fills = []; }
   return { ok: true, result: { ...out, logs } };
 }
 

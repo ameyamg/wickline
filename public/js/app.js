@@ -188,6 +188,7 @@ function createView(state) {
       trading.onViewChange(x);
     },
     onStrategy: (x, entry) => tester.onResult(x, entry),
+    onNotice: (x, msg) => { if (x === activeView) toast(msg); },
     onStatus: (x) => { if (x === activeView) syncStatus(); },
     onUpdate: (x) => { if (x === activeView) syncTitle(); trading.onChartUpdate(x); },
     onReplay: (x, event, payload) => {

@@ -454,6 +454,16 @@ body.popout .hide-popout { display: none; }
 .st-tabs button:hover { color: var(--text-strong); background: var(--panel-2); }
 .st-tabs button.on { color: var(--accent-text); background: var(--accent-soft); }
 .st-content { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.st-range { display: flex; align-items: center; gap: 4px; flex: none; margin-left: 6px; }
+.st-range-mode { max-width: 150px; }
+.st-range-dates { display: flex; align-items: center; gap: 4px; }
+.st-range .rp-date { height: 30px; }
+.st-progress { min-width: min(420px, 90%); }
+.st-bar { height: 6px; border-radius: 3px; background: var(--panel-2); overflow: hidden; }
+.st-bar i { display: block; height: 100%; width: 0; border-radius: 3px; background: var(--accent); transition: width 0.3s; }
+.st-bar.busy i { width: 30%; animation: st-busy 1.2s ease-in-out infinite; }
+@keyframes st-busy { from { margin-left: -30%; } to { margin-left: 100%; } }
+.st-progress .btn-ghost { align-self: center; margin-top: 8px; }
 .st-empty { margin: auto; max-width: 520px; text-align: center; display: flex; flex-direction: column; gap: 6px; padding: 20px; color: var(--muted); }
 .st-empty b { color: var(--text-strong); }
 .st-empty code { font-size: 12px; padding: 0 4px; border-radius: 4px; background: var(--panel-2); color: var(--text); }

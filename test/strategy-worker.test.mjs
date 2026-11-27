@@ -45,6 +45,17 @@ console.log('strategy script');
   check('trades alternate long/short or exit', s.trades.every((t) => ['long', 'short'].includes(t.side)));
 }
 
+console.log('a date-range backtest leaves the plots out');
+{
+  const code = `strategy('EMA'); const f = ta.ema(close, 9), s = ta.ema(close, 21); const a = plot(f), b = plot(s); fill(a, b, '#4FA3F7');
+    strategy.entry('L', 'long', ta.crossover(f, s)); strategy.close(null, ta.crossunder(f, s));`;
+  const chart = run(code, 3000);
+  const ranged = run(code, 3000, { noPlots: true });
+  check('on the chart: plots and fills', chart.ok && chart.result.plots.length === 2 && chart.result.fills.length === 1, chart.error);
+  check('over a range: none, and the same backtest', ranged.ok && ranged.result.plots.length === 0 && ranged.result.fills.length === 0
+    && ranged.result.strategy.trades.length === chart.result.strategy.trades.length && ranged.result.strategy.equity.length === 3000, ranged.error);
+}
+
 console.log('property overrides from the tester');
 {
   const r = run(`strategy('X'); strategy.entry('L', 'long', ta.crossover(close, ta.sma(close, 20))); strategy.close(null, ta.crossunder(close, ta.sma(close, 20)));`,

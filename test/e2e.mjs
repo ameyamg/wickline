@@ -770,6 +770,54 @@ app.whenReady().then(async () => {
       if (wasHidden) document.querySelector('#st-close').click();
       return { opts, summary }; })()`);
     check('...and the Strategy tester lists it with results', testerList.opts.includes('Supertrend + ADX') && testerList.summary === 'results', JSON.stringify(testerList));
+    // The tester over a date range (From / To): the history this profile doesn't have downloads first,
+    // with its progress, then the strategy runs over the range's bars (March 2025, 15m: 31 × 96 bars).
+    await run(`(${activeChart}).setTimeframe('15m')`);
+    for (let i = 0; i < 40; i++) {
+      await wait(500);
+      if (await run(`(() => { const v = ${activeChart}; return v.state.tf === '15m' && v.bars.length > 100 && [...v.live.values()].some((e) => e.def?.name === 'Supertrend + ADX' && e.report); })()`)) break;
+    }
+    const ranged = await run(`(async () => { const w = (ms) => new Promise((r) => setTimeout(r, ms));
+      const wasHidden = document.querySelector('#tester').hidden;
+      if (wasHidden) document.querySelector('#st-btn').click();
+      await w(300);
+      const sel = document.querySelector('#st-select');
+      sel.value = [...sel.options].find((o) => o.textContent === 'Supertrend + ADX').value; sel.dispatchEvent(new Event('change'));
+      const mode = document.querySelector('.st-range-mode'); mode.value = 'range'; mode.dispatchEvent(new Event('change'));
+      const datesShown = !document.querySelector('.st-range-dates').hidden;
+      const prompt = !!document.querySelector('#st-content .st-empty');
+      document.querySelector('.st-from').value = '2025-03-01'; document.querySelector('.st-to').value = '2025-03-31';
+      // Every progress text as it changes (a step can be over in a few milliseconds).
+      const seen = [];
+      const note = () => {
+        const p = document.querySelector('#st-content .st-progress-text')?.textContent.split(/[:…]/)[0].trim();
+        if (p && seen[seen.length - 1] !== p) seen.push(p);
+      };
+      const watch = new MutationObserver(note);
+      watch.observe(document.querySelector('#st-content'), { subtree: true, childList: true, characterData: true });
+      document.querySelector('.st-run').click();
+      note();
+      for (let k = 0; k < 600; k++) {
+        await w(100);
+        if (document.querySelector('#st-content .st-kpis') || (!document.querySelector('#st-content .st-progress') && document.querySelector('#st-content .st-empty') && k > 5)) break;
+      }
+      watch.disconnect();
+      const legend = document.querySelector('#st-content .st-legend .muted')?.textContent || '';
+      const empty = document.querySelector('#st-content .st-empty')?.innerText || '';
+      document.querySelector('[data-st-tab="trades"]').click(); await w(200);
+      const rows = [...document.querySelectorAll('#st-content .st-trades tbody tr[data-ei]')];
+      const entries = rows.map((r) => r.children[3]?.textContent || '');
+      document.querySelector('[data-st-tab="overview"]').click();
+      mode.value = 'chart'; mode.dispatchEvent(new Event('change')); await w(300);
+      const backToChart = !!document.querySelector('#st-content .st-kpis') && document.querySelector('.st-range-dates').hidden;
+      if (wasHidden) document.querySelector('#st-close').click();
+      return { datesShown, prompt, seen, legend, empty, trades: rows.length, inRange: entries.every((t) => t.startsWith('2025-03') || t.startsWith('2025-04')), backToChart }; })()`);
+    check('Strategy tester, date range: From / To, and a prompt until Run', ranged.datesShown && ranged.prompt, JSON.stringify(ranged));
+    check('...Run downloads the missing history first, showing its progress, then tests', ranged.seen.some((s) => s.startsWith('Downloading BTCUSDT history'))
+      && ranged.seen.some((s) => /^Testing 2,976 bars/.test(s)), JSON.stringify(ranged.seen));
+    check('...the results cover just that range (2,976 bars of 15m in March 2025), with its trades', /2025-03-01 – 2025-03-31/.test(ranged.legend)
+      && /2,976 bars/.test(ranged.legend) && ranged.trades > 0 && ranged.inRange, JSON.stringify({ legend: ranged.legend, trades: ranged.trades, inRange: ranged.inRange, empty: ranged.empty }));
+    check('...and "Chart bars" shows the chart\'s live result again', ranged.backToChart);
     const pub = await run(`(async () => { const w = (ms) => new Promise((r) => setTimeout(r, ms));
       let opened = null; const orig = window.open; window.open = (u) => { opened = u; return null; };
       document.querySelector('#ed-btn').click(); await w(300);

@@ -125,6 +125,7 @@ export function normalizeChartState(s = {}) {
     chartType: CHART_TYPES.some(([k]) => k === s.chartType) ? s.chartType : 'candles',
     logScale: !!s.logScale,
     indicatorLegendCollapsed: s.indicatorLegendCollapsed === true,
+    activeStrategy: typeof s.activeStrategy === 'string' && s.activeStrategy ? s.activeStrategy.slice(0, 64) : null, // the strategy shown on the chart
     indicators: (Array.isArray(s.indicators) ? s.indicators : defaultIndicators())
       .filter((i) => i && typeof i === 'object' && (i.type === 'script' ? (typeof i.scriptId === 'string' && i.scriptId) : Object.hasOwn(INDICATORS, i.type)))
       .map(normalizeIndicator),
@@ -138,7 +139,9 @@ export function normalizeChartState(s = {}) {
 /** Deep copy of a chart state with fresh indicator ids (for new cells and pop-outs). */
 export function cloneChartState(s, overrides = {}) {
   const copy = JSON.parse(JSON.stringify(s));
-  copy.indicators = copy.indicators.map((i) => ({ ...i, id: uid() }));
+  const ids = new Map();
+  copy.indicators = copy.indicators.map((i) => { const id = uid(); ids.set(i.id, id); return { ...i, id }; });
+  if (copy.activeStrategy) copy.activeStrategy = ids.get(copy.activeStrategy) || null; // the same strategy, by its new id
   return { ...copy, ...overrides };
 }
 
@@ -504,8 +507,7 @@ export class ChartView {
     toLatest.addEventListener('click', () => { this.chart.timeScale().scrollToRealTime(); toLatest.hidden = true; });
     this.chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
       this.updateToLatest(range);
-      if (!range || this.loadingOlder || !this.feed?.canLoadMore || !this.bars.length) return;
-      if (range.from < 40) this.loadOlder();
+      this.loadOlderAhead(range);
     });
 
     const rpBar = this.q('.replay-bar');
@@ -882,7 +884,7 @@ export class ChartView {
   addScript(scriptId) {
     const inst = { id: uid(), type: 'script', scriptId, params: {} };
     this.state.indicators.push(inst);
-    this.addScriptEntry(inst);
+    this.addScriptEntry(inst).justAdded = true; // a strategy becomes the one on the chart (applyScriptResult)
     this.buildLegend();
     this.hooks.onChange?.(this);
   }
@@ -911,9 +913,11 @@ export class ChartView {
     entry.running = true;
     entry.lastRun = performance.now();
     const times = this.bars.map((b) => b.time);
+    const dataGen = this.dataGen;
     engine().run(script.code, this.bars, entry.inst.params, { tfSec: this.tf.sec, symbol: this.state.symbol, strategy: entry.inst.strategy }, entry.inst.scriptId)
       .then((res) => {
         if (this.destroyed || this.live.get(entry.inst.id) !== entry) return;
+        if (dataGen !== this.dataGen) { entry.again = true; return; } // computed on bars the chart no longer shows: run again
         const hadError = !!entry.error;
         entry.error = null;
         entry.name = script.name;
@@ -973,6 +977,10 @@ export class ChartView {
     }
     syncMarkers(entry);
     if (res.strategy) this.applyStrategy(entry, res.strategy, times);
+    // A strategy just added becomes the one on the chart (once its first run shows it's a strategy).
+    if (entry.justAdded && res.strategy) this.state.activeStrategy = entry.inst.id;
+    entry.justAdded = false;
+    if (res.strategy && this.applyStrategyFocus()) forceLegend = true;
     if (structural || forceLegend) this.buildLegend();
     else this.updateLegend(this.lastCrosshair);
     if (changedParams) this.hooks.onChange?.(this);
@@ -983,7 +991,45 @@ export class ChartView {
   applyStrategy(entry, report, times) {
     entry.report = report;
     entry.times = times;
-    if (!this.main) return;
+    this.drawStrategy(entry);
+  }
+
+  /** The Strategy Tester's date-range test of this strategy while the tester shows it, if it's of this chart's symbol and timeframe. */
+  rangeShown(entry) {
+    const rg = entry.rangeShown;
+    return rg && rg.viewKey === `${this.state.symbol}|${this.tf.id}` ? rg : null;
+  }
+
+  /**
+   * Shows the Strategy Tester's date-range test of strategy `id` on the chart (its trades and numbers),
+   * or, with null, the strategy's own result on the chart's bars again. The tester shows one or the
+   * other; the chart shows the same.
+   */
+  showStrategyRange(id, result) {
+    const entry = this.live.get(id);
+    if (!entry || (entry.rangeShown || null) === (result || null)) return;
+    entry.rangeShown = result || null;
+    this.drawStrategy(entry);
+    this.updateLegend(this.lastCrosshair);
+  }
+
+  /**
+   * A strategy's trades on the chart: entry and exit markers, and lines from one to the other. From its
+   * result on the chart's bars, or from the date-range test the tester shows: those trades on the bars
+   * the chart has, by time (older ones appear as scrolling back loads their bars; this runs again after
+   * every run of the strategy, so after every load too).
+   */
+  drawStrategy(entry) {
+    if (!this.main || !entry.report) return;
+    const rg = this.rangeShown(entry);
+    const report = rg ? rg.report : entry.report;
+    let timeAt = (i) => entry.times[i];
+    let indexAt = (i) => (entry.times[i] != null ? i : null);
+    if (rg) {
+      const index = new Map(this.bars.map((b, k) => [b.time, k]));
+      timeAt = (i) => (index.has(rg.times[i]) ? rg.times[i] : null);
+      indexAt = (i) => index.get(rg.times[i]) ?? null;
+    }
     if (!entry.tradeMarkers || entry.tradeTarget !== this.main) {
       try { entry.tradeMarkers?.detach(); } catch { /* gone */ }
       if (entry.tradeLines && entry.tradeTarget) { try { entry.tradeTarget.detachPrimitive(entry.tradeLines); } catch { /* gone */ } }
@@ -996,24 +1042,60 @@ export class ChartView {
       'Take profit': 'TP', 'Stop loss': 'SL', Stop: t('chart.mk.stop'), 'Trailing stop': t('chart.mk.trail'),
       Reverse: t('chart.mk.reverse'), Close: t('chart.mk.close'),
     };
-    const markers = report.markers.filter((m) => times[m.i] != null).map((m) => {
+    const markers = report.markers.filter((m) => timeAt(m.i) != null).map((m) => {
       const long = m.side === 'long';
       if (m.kind === 'entry') {
-        return { time: times[m.i], position: long ? 'belowBar' : 'aboveBar', shape: long ? 'arrowUp' : 'arrowDown', color: long ? '#4FA3F7' : '#EC5246', text: m.id };
+        return { time: timeAt(m.i), position: long ? 'belowBar' : 'aboveBar', shape: long ? 'arrowUp' : 'arrowDown', color: long ? '#4FA3F7' : '#EC5246', text: m.id };
       }
-      return { time: times[m.i], position: long ? 'aboveBar' : 'belowBar', shape: long ? 'arrowDown' : 'arrowUp', color: '#E040FB', text: (Object.hasOwn(SHORT, m.reason) && SHORT[m.reason]) || m.reason };
+      return { time: timeAt(m.i), position: long ? 'aboveBar' : 'belowBar', shape: long ? 'arrowDown' : 'arrowUp', color: '#E040FB', text: (Object.hasOwn(SHORT, m.reason) && SHORT[m.reason]) || m.reason };
     });
     markers.sort((a, b) => a.time - b.time);
     entry.tradeMarkerData = markers;
-    entry.tradeLines.setHidden(isHidden(entry.inst));
+    entry.tradeLines.setHidden(isHidden(entry.inst) || !!entry.offChart);
     syncMarkers(entry);
-    entry.tradeLineData = {
-      trades: report.trades.map((t) => ({ ei: t.entryIndex, ep: t.entryPrice, xi: t.exitIndex, xp: t.exitPrice, win: t.pnl > 0 })),
-    };
+    const trades = [];
+    for (const tr of report.trades) {
+      const ei = indexAt(tr.entryIndex), xi = indexAt(tr.exitIndex);
+      if (ei != null && xi != null) trades.push({ ei, ep: tr.entryPrice, xi, xp: tr.exitPrice, win: tr.pnl > 0 });
+    }
+    entry.tradeLineData = { trades };
   }
 
   /** Strategy entries on this chart (for the Strategy Tester). */
   strategies() { return [...this.live.values()].filter((e) => e.def?.strategy); }
+
+  /**
+   * The one strategy shown on the chart: the one picked in the Strategy Tester, or the last added. The
+   * others stay (they run, and the tester lists them) but draw nothing and have no legend row.
+   */
+  activeStrategy() {
+    const all = this.strategies();
+    return all.find((e) => e.inst.id === this.state.activeStrategy) || all[all.length - 1] || null;
+  }
+
+  setActiveStrategy(id) {
+    if (!this.live.get(id)?.def?.strategy || id === this.activeStrategy()?.inst.id) return;
+    this.state.activeStrategy = id;
+    this.applyStrategyFocus();
+    this.buildLegend();
+    this.hooks.onChange?.(this);
+  }
+
+  /** Shows the active strategy on the chart and hides the others. → whether any changed. */
+  applyStrategyFocus() {
+    const active = this.activeStrategy();
+    let changed = false;
+    for (const e of this.strategies()) {
+      const off = e !== active;
+      if (!!e.offChart === off) continue;
+      e.offChart = off;
+      changed = true;
+      applyEntryVisibility(e);
+    }
+    // For the legend's count, which reads only this (it never touches the chart or its entries).
+    this.offChartIds = new Set(this.strategies().filter((e) => e.offChart).map((e) => e.inst.id));
+    return changed;
+  }
 
   setStrategyProps(id, props) {
     const entry = this.live.get(id);
@@ -1028,6 +1110,29 @@ export class ChartView {
   focusBars(a, b) {
     const pad = Math.max(10, Math.round((b - a) * 0.6));
     this.chart.timeScale().setVisibleLogicalRange({ from: a - pad, to: b + pad });
+  }
+
+  /** focusBars by time (a trade of a date-range backtest). False when the chart hasn't loaded that far back. */
+  focusTimes(t1, t2) {
+    const a = this.indexAtOrBefore(t1);
+    if (a < 0 || this.bars[a].time < t1 - this.tf.sec) return false;
+    this.focusBars(a, Math.max(a, this.indexAtOrBefore(t2)));
+    return true;
+  }
+
+  /**
+   * Backtests one of this chart's strategies over other bars (a date range): its code, inputs and
+   * properties as on the chart, in a worker of its own (the chart's keeps running), without plots.
+   * → the engine's result (its `strategy` is the report).
+   */
+  backtestBars(id, bars, { timeoutMs } = {}) {
+    const entry = this.live.get(id);
+    const script = entry && scriptStore.get(entry.inst.scriptId);
+    if (!script) return Promise.reject(new Error(t('chart.err.scriptDeleted')));
+    if (script.community && !canRunCommunity()) return Promise.reject(new Error(t('chart.err.communityDesktopOnly')));
+    return engine().run(script.code, bars, entry.inst.params,
+      { tfSec: this.tf.sec, symbol: this.state.symbol, strategy: entry.inst.strategy, noPlots: true },
+      `range:${entry.inst.scriptId}`, { timeoutMs });
   }
 
   // --- rebuild everything ------------------------------------------------------------
@@ -1133,6 +1238,8 @@ export class ChartView {
     if (!entry) return;
     this.removeIndicatorSeries(entry);
     this.state.indicators = this.state.indicators.filter((i) => i.id !== id);
+    if (this.state.activeStrategy === id) this.state.activeStrategy = null; // the last one left takes its place
+    this.applyStrategyFocus();
     if (settings.view === this) closeSettings();
     this.buildLegend();
     this.hooks.onChange?.(this);
@@ -1440,21 +1547,33 @@ export class ChartView {
    * big download comes back as the feed's pendingAsk: scrolling asks once (only when automatic downloads
    * are off; small ones just happen), a replay's date asks in replayToDate.
    */
-  async loadOlder({ from = null } = {}) {
+  loadOlder(opts) {
+    // One at a time: each starts from the oldest bar the one before it left (a load ahead of the
+    // scroll and a replay's search for its date could otherwise fetch the same bars twice).
+    const run = (this.olderQueue || Promise.resolve()).catch(() => 0).then(() => this.loadOlderNow(opts));
+    this.olderQueue = run;
+    return run;
+  }
+
+  async loadOlderNow({ from = null } = {}) {
+    if (this.destroyed || !this.bars.length) return 0;
     this.loadingOlder = true;
     const f = this.feed, gen = this.loadGen;
     const note = setTimeout(() => { if (gen === this.loadGen) this.q('.hist-loading').hidden = false; }, 400);
+    let added = 0;
     try {
-      const older = await f.loadOlder(this.bars[0].time, { from });
+      const first = this.bars[0].time;
+      const older = (await f.loadOlder(first, { from })).filter((b) => b.time < first);
       if (gen === this.loadGen && from == null && f.pendingAsk && !this.histDeclined) this.askHistory(f.pendingAsk, { resume: () => this.loadOlder() });
-      if (gen !== this.loadGen || this.feed !== f || !older.length) return 0;
+      if (gen !== this.loadGen || this.feed !== f || this.destroyed || !older.length || this.bars[0].time !== first) return 0;
       this.bars = older.concat(this.bars);
       if (this.replay) {
         this.replay.all = older.concat(this.replay.all);
         this.replay.idx += older.length;
       }
       this.renderAll(false); // the chart keeps its scroll position when data is prepended
-      return older.length;
+      added = older.length;
+      return added;
     } catch (e) {
       console.warn('Could not load older bars:', e);
       return 0;
@@ -1462,7 +1581,23 @@ export class ChartView {
       clearTimeout(note);
       this.q('.hist-loading').hidden = true;
       this.loadingOlder = false;
+      // Scrolling: still near the oldest bar (a fast scroll, a wide zoom)? Load the next ones too.
+      if (added && from == null && gen === this.loadGen) setTimeout(() => this.loadOlderAhead(), 0);
     }
+  }
+
+  /**
+   * Scrolling back: older bars start loading while the oldest one is still three screens away (at least
+   * 1,000 bars; a freshly opened chart so loads its next page in the background), so they're in before
+   * the user gets to the edge, from whichever source. Stocks on the static website wait for the edge:
+   * each of their pages costs Twelve Data credits.
+   */
+  loadOlderAhead(range = null) {
+    if (this.destroyed || this.loadingOlder || !this.feed?.canLoadMore || !this.bars.length) return;
+    const r = range || this.chart.timeScale().getVisibleLogicalRange();
+    if (!r) return;
+    const ahead = this.feed.server === false ? 40 : Math.max(1000, 3 * (r.to - r.from));
+    if (r.from < ahead) this.loadOlder();
   }
 
   /**
@@ -1514,8 +1649,14 @@ export class ChartView {
     this.flushTimer = null;
     this.dirtyFrom = Infinity;
     if (this.state.chartType === 'heikin') this.ha = heikinAshi(this.bars);
+    if (resetView) this.dataGen = (this.dataGen || 0) + 1; // other bars altogether (symbol, timeframe, a replay's window)
     this.main.setData(this.bars.map((_, i) => this.mainPoint(i)));
-    for (const entry of this.live.values()) this.computeAndSet(entry);
+    for (const entry of this.live.values()) {
+      // A script's lines hold the old bars until its worker answers. Cleared now, or their times stay on
+      // the time scale next to the new ones, and the view jumps when they're replaced.
+      if (resetView && entry.script) for (const { api } of entry.series) api.setData([]);
+      this.computeAndSet(entry);
+    }
     for (const e of this.compareEntries.values()) this.renderCompare(e);
     this.seriesLen = this.bars.length;
     this.drawings.setBars(this.bars);
@@ -2064,7 +2205,7 @@ export class ChartView {
   updateIndicatorLegend() {
     const collapsed = this.state.indicatorLegendCollapsed;
     const button = this.q('.lg-toggle');
-    const count = this.state.indicators.length;
+    const count = this.state.indicators.filter((i) => !this.offChartIds?.has(i.id)).length; // strategies not on the chart don't count
     this.el.classList.toggle('indicators-collapsed', collapsed);
     button.hidden = count === 0;
     button.setAttribute('aria-expanded', String(!collapsed));
@@ -2103,6 +2244,7 @@ export class ChartView {
       e.row = row;
     }
     for (const entry of this.live.values()) {
+      if (entry.offChart) { entry.row = null; entry.paneLegend = null; continue; } // a strategy not on the chart (activeStrategy)
       const row = document.createElement('div');
       const hidden = isHidden(entry.inst);
       row.className = hidden ? 'lg-row off' : 'lg-row';
@@ -2130,7 +2272,7 @@ export class ChartView {
     this.updateIndicatorLegend();
     // One eye for all of them (issue #19), once there are two or more: hides all while any is shown.
     const all = this.q('.lg-all');
-    const entries = [...this.live.values()];
+    const entries = [...this.live.values()].filter((e) => !e.offChart);
     const anyShown = entries.some((e) => !isHidden(e.inst));
     all.hidden = entries.length < 2;
     all.innerHTML = anyShown ? ICON_EYE : ICON_EYE_OFF;
@@ -2194,10 +2336,14 @@ export class ChartView {
         color = color.replace(/,\s*[\d.]+\)$/, ', 1)'); // legend text is always opaque
         return `<b style="color:${color}">${this.formatIndicator(entry.def, v)}</b>`;
       }).join('');
-      const s = entry.report?.summary;
+      // A strategy's numbers: on the chart's bars, or of the date-range test the tester shows (with its dates).
+      const rg = entry.report ? this.rangeShown(entry) : null;
+      const s = (rg ? rg.report : entry.report)?.summary;
       if (s) {
         const pct = s.netProfitPct;
-        html += `<span class="lg-strat">${t('chart.stratTrades', { n: s.trades })} · <b class="${pct >= 0 ? 'up' : 'down'}">${pct >= 0 ? '+' : ''}${fixed(pct, 2)}%</b></span>`;
+        const day = (sec) => new Date(sec * 1000).toISOString().slice(0, 10);
+        const span = rg ? ` · ${esc(t('st.range.span', { from: day(rg.start), to: day(rg.end) }))}` : '';
+        html += `<span class="lg-strat">${t('chart.stratTrades', { n: s.trades })} · <b class="${pct >= 0 ? 'up' : 'down'}">${pct >= 0 ? '+' : ''}${fixed(pct, 2)}%</b>${span}</span>`;
       }
       entry.row.querySelector('.lg-vals').innerHTML = html;
     }
@@ -2262,7 +2408,8 @@ export class ChartView {
       }
       entry.inst.params[spec.key] = v;
       if (this.bars.length) this.computeAndSet(entry);
-      entry.row.querySelector('.lg-name').textContent = this.entryLabel(entry);
+      const name = entry.row?.querySelector('.lg-name');
+      if (name) name.textContent = this.entryLabel(entry);
     } else if (t.dataset.color) {
       entry.inst.colors = { ...entry.inst.colors, [t.dataset.color]: t.value };
       entry.series.find((x) => x.plot.key === t.dataset.color)?.api.applyOptions({ color: t.value });
