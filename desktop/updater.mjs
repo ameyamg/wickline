@@ -13,6 +13,9 @@
 
 import electron from 'electron'; // the whole module: plain Node (the unit tests) has no named exports for it
 
+/** Where updates come from: the newest published release's files on GitHub. */
+export const UPDATE_FEED = 'https://github.com/keptaduona/wickline/releases/latest/download';
+
 /** Whether this copy of the app can install updates itself. */
 export function canSelfUpdate(env = process.env, platform = process.platform, packaged = electron?.app?.isPackaged) {
   if (env.WICKLINE_UPDATE_FEED) return true; // a test feed (developers): see below
@@ -38,11 +41,12 @@ export function setupUpdater({ ipcMain, isAppUrl, getWindow }) {
     updater.autoDownload = false; // only when the page asks (its update check is on)
     updater.autoInstallOnAppQuit = true;
     updater.logger = null;
+    // The newest release's files, straight from GitHub's "latest" download address (latest.yml or
+    // latest-linux.yml, then the file it names), rather than GitHub's "latest release" lookup page, which
+    // GitHub sometimes refuses to anonymous requests (a 504 seen on 27 Nov 2026 while the files came fine).
     // WICKLINE_UPDATE_FEED=http://…/ : a local copy of a release's files, to test updating without a release.
-    if (process.env.WICKLINE_UPDATE_FEED) {
-      updater.forceDevUpdateConfig = true;
-      updater.setFeedURL({ provider: 'generic', url: process.env.WICKLINE_UPDATE_FEED });
-    }
+    if (process.env.WICKLINE_UPDATE_FEED) updater.forceDevUpdateConfig = true;
+    updater.setFeedURL({ provider: 'generic', url: process.env.WICKLINE_UPDATE_FEED || UPDATE_FEED });
     updater.on('download-progress', (p) => send({ ...status, state: 'downloading', percent: Math.floor(p.percent || 0) }));
     updater.on('update-downloaded', (info) => send({ state: 'ready', version: info.version }));
     updater.on('error', (e) => send({ ...status, state: 'error', error: String(e?.message || e).split('\n')[0].slice(0, 200) }));
