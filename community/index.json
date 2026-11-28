@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated": "2026-11-23T10:33:49Z",
+  "updated": "2026-11-28T08:27:37Z",
   "scripts": [
     {
       "id": "wickline-ema-cross-signals",
@@ -323,6 +323,27 @@
       "file": "scripts/wickline-range-breakout.js",
       "size": 979,
       "sha256": "c6be486f47072a8170aa68a4ed2347fbb128848400f337b9e51d8f2604f0ce50"
+    },
+    {
+      "id": "25-bar-count",
+      "issue": 25,
+      "name": "Bar Count",
+      "description": "Numbers intraday candles with even-numbered labels, configurable session resets, system time zone detection and automatic daylight-saving adjustment. Hidden on daily and higher timeframes; text-only labels require marker-size API support, while older builds show circles.",
+      "kind": "indicator",
+      "tags": [
+        "bar-count",
+        "price-action",
+        "intraday",
+        "sessions",
+        "timezone"
+      ],
+      "author": "Tonylo-lab",
+      "created": "2026-11-28T08:26:56Z",
+      "updated": "2026-11-28T08:27:37Z",
+      "likes": 0,
+      "file": "scripts/25-bar-count.js",
+      "size": 7082,
+      "sha256": "96e99ed574c7f343d2bb750060813b9c1887f588fec1dd56aebec114850c28b0"
     }
   ]
 }
